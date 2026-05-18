@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BIZCONTRACT | Red de Contratación Privada B2B</title>
+
+  <!-- Supabase -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root{
+      --bg-main: #0f172a;
+      --bg-app: #f8fafc;
+      --bg-sidebar: #090d16;
+      --bg-sidebar-hover: #1e293b;
+      --bg-sidebar-active: #334155;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --premium: #8b5cf6;
+    }
+
+    *{box-sizing:border-box; font-family: 'Inter', system-ui, -apple-system, sans-serif;}
+    html,body{height:100%;margin:0;background:var(--bg-app);color:var(--text-main);}
+
+    /* Toasts */
+    #toast-container{position:fixed;bottom:20px;right:20px;z-index:11000;display:flex;flex-direction:column;gap:10px}
+    .toast{background:white;color:var(--text-main);padding:1rem 1.5rem;border-radius:6px;box-shadow:0 10px 25px rgba(0,0,0,0.1);font-size:0.9rem;font-weight:500;min-width:320px;max-width:450px;display:flex;align-items:center;justify-content:space-between;transform:translateY(100px);opacity:0;transition:all .35s ease}
+    .toast.show{transform:translateY(0);opacity:1}
+    .toast.success{border-left:5px solid var(--success);background:#f0fdf4;color:#14532d}
+    .toast.danger{border-left:5px solid var(--danger);background:#fef2f2;color:#7f1d1d}
+    .toast.warning{border-left:5px solid var(--warning);background:#fffbeb;color:#78350f}
+    .toast-close{background:none;border:none;margin-left:1rem;cursor:pointer;color:inherit;font-size:1rem;opacity:0.6}
+
+    /* Auth modal */
+    #view-auth{position:fixed;inset:0;background:rgba(9,13,22,0.9);display:flex;justify-content:center;align-items:flex-start;z-index:9999;overflow-y:auto;padding:3rem 1rem}
+    .auth-card{background:white;padding:2.5rem;border-radius:8px;width:100%;max-width:520px;box-shadow:0 8px 40px rgba(2,6,23,0.4);margin:auto;border:1px solid var(--border)}
+    .logo-container{display:flex;align-items:center;gap:12px;margin-bottom:1.5rem}
+    .logo-img{height:32px;width:auto;object-fit:contain}
+    .logo-biz{font-size:1.4rem;font-weight:900;color:var(--text-main);letter-spacing:1px;text-transform:uppercase}
+    .btn-google{background:white;color:#334155;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600;padding:0.8rem;border-radius:6px;cursor:pointer;width:100%;margin-bottom:1.25rem;font-size:0.95rem;transition:background .15s}
+    .btn-google img{width:18px;height:18px}
+    .btn-google:hover{background:#f8fafc}
+    .auth-divider{display:flex;align-items:center;text-align:center;color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;margin:1rem 0}
+    .auth-divider::before,.auth-divider::after{content:'';flex:1;border-bottom:1px solid var(--border)}
+    .auth-divider:not(:empty)::before{margin-right:.5em}
+    .auth-divider:not(:empty)::after{margin-left:.5em}
+
+    /* Layout */
+    .app-container{display:none;width:100%;min-height:100vh}
+    aside{width:280px;background:var(--bg-sidebar);color:#fff;display:flex;flex-direction:column;padding:2rem 1.2rem;position:fixed;height:100vh;box-shadow:4px 0 20px rgba(0,0,0,0.15);z-index:100}
+    .brand-box{display:flex;align-items:center;gap:12px;margin-bottom:3rem;padding-left:0.5rem}
+    .brand{font-size:1.3rem;font-weight:900;color:#fff;letter-spacing:1.5px;text-transform:uppercase}
+    .menu-group-title{font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:1.5rem;margin-bottom:0.5rem;padding-left:0.75rem}
+    .menu-item{display:flex;align-items:center;padding:0.8rem 1rem;color:#94a3b8;border-radius:6px;margin-bottom:0.35rem;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:0.5px}
+    .menu-item:hover{background:var(--bg-sidebar-hover);color:#f8fafc;transform:translateX(4px)}
+    .menu-item.active{background:var(--bg-sidebar-active);color:#fff;border-left:4px solid var(--success);padding-left:0.75rem}
+
+    main{margin-left:280px;flex:1;padding:2.5rem;width:calc(100% - 280px);background:var(--bg-app)}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2.5rem;border-bottom:1px solid var(--border);padding-bottom:1.5rem}
+    .workspace{display:grid;grid-template-columns:340px 1fr;gap:2.5rem}
+    .filter-panel{background:white;padding:1.8rem;border-radius:8px;border:1px solid var(--border);position:sticky;top:2rem}
+    .filter-group{margin-bottom:1.25rem}
+    .filter-group label{display:block;font-size:0.8rem;font-weight:700;margin-bottom:0.6rem;color:#334155;text-transform:uppercase}
+    .filter-group select,.filter-group input{width:100%;padding:0.75rem;border:1px solid var(--border);border-radius:6px;background:white;font-size:0.9rem}
+    .form-group{margin-bottom:1rem}
+    .form-group label{display:block;font-size:0.8rem;font-weight:700;margin-bottom:0.6rem;text-transform:uppercase;color:#334155}
+    .form-group input,.form-group textarea,.form-group select{width:100%;padding:0.8rem;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;background:white;outline:none}
+    .btn{background:var(--bg-main);color:white;border:none;padding:0.9rem 1.6rem;border-radius:6px;font-weight:700;cursor:pointer;width:100%;text-transform:uppercase;font-size:0.85rem;letter-spacing:0.5px}
+    .btn:hover:not(:disabled){opacity:0.95;transform:translateY(-1px)}
+    .btn:disabled{opacity:0.7;cursor:not-allowed}
+    .btn-premium{background:linear-gradient(135deg,#7c3aed,#9333ea);color:white}
+    .project-card{background:white;border:1px solid var(--border);border-radius:8px;padding:1.2rem;margin-bottom:1rem}
+    .project-header{display:flex;justify-content:space-between;font-size:0.85rem;color:var(--text-muted);text-transform:uppercase;font-weight:600}
+    .project-title{font-size:1.1rem;margin:0.5rem 0;font-weight:700;color:var(--text-main)}
+    .project-meta{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1rem}
+    .role-tag{background:#f1f5f9;color:#334155;padding:0.3rem 0.75rem;border-radius:4px;font-size:0.7rem;font-weight:700;text-transform:uppercase;border:1px solid var(--border)}
+    .project-footer{display:flex;justify-content:space-between;align-items:center;margin-top:1rem;padding-top:1rem;border-top:1px solid #f1f5f9}
+
+    .view-section{display:none}
+    .view-section.active{display:block}
+
+    .live-badge{background:#f0fdf4;border:1px solid #bbf7d0;padding:0.5rem 1rem;border-radius:4px;color:#166534;font-size:0.8rem;font-weight:700;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+    .pro-badge{background:linear-gradient(135deg,#fef3c7,#fde68a);border:1px solid #fcd34d;color:#78350f}
+
+    @media (max-width:900px){
+      aside{position:relative;width:100%;height:auto}
+      main{margin-left:0;width:100%}
+      .workspace{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- AUTH VIEW -->
+  <div id="view-auth">
+    <div class="auth-card" role="dialog" aria-modal="true">
+      <div class="logo-container">
+        <img src="https://img.icons8.com/ios-filled/50/0f172a/workflow.png" class="logo-img" alt="Logo">
+        <div class="logo-biz">BIZCONTRACT</div>
+      </div>
+
+      <div class="auth-form-body">
+        <button type="button" class="btn-google" onclick="handleGoogleLogin()">
+          <img src="https://img.icons8.com/color/48/google-logo.png" alt="Google"> Continuar con Google
+        </button>
+
+        <div class="auth-divider">O acceder con credenciales</div>
+
+        <h4 id="auth-title" style="margin-bottom:1rem; font-size:0.9rem; text-transform:uppercase; color:var(--text-muted)">Ingreso Operativo</h4>
+
+        <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+          <div class="form-group">
+            <label for="auth-email">Correo Electrónico Comercial</label>
+            <input type="email" id="auth-email" required placeholder="nombre@empresa.com">
+          </div>
+
+          <div class="form-group">
+            <label for="auth-pass">Contraseña</label>
+            <input type="password" id="auth-pass" required placeholder="••••••••">
+          </div>
+
+          <button type="submit" class="btn" id="auth-btn">Iniciar Sesión</button>
+        </form>
+
+        <div style="text-align:center;margin-top:1rem;">
+          <a href="#" id="auth-toggle" onclick="toggleAuthMode(event)" style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">¿No tienes cuenta? Regístrate aquí</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP WORKSPACE -->
+  <div class="app-container" id="app-workspace" role="application">
+    <aside>
+      <div class="brand-box">
+        <img src="https://img.icons8.com/ios-filled/50/ffffff/workflow.png" style="width:22px;height:22px" alt="Logo Aside">
+        <div class="brand">BIZCONTRACT</div>
+      </div>
+
+      <div class="menu-group-title">Mercado y Contratos</div>
+      <a onclick="switchView('explorar')" class="menu-item active" id="menu-explorar">Buscar Requerimientos</a>
+      <a onclick="switchView('publicar')" class="menu-item" id="menu-publicar">Publicar Solicitud</a>
+
+      <div class="menu-group-title">Mi Actividad Operativa</div>
+      <a onclick="switchView('mis-proyectos')" class="menu-item" id="menu-mis-proyectos">Mis Proyectos</a>
+      <a onclick="switchView('mis-postulaciones')" class="menu-item" id="menu-mis-postulaciones">Mis Postulaciones</a>
+
+      <div class="menu-group-title">Gestión Interna</div>
+      <a onclick="switchView('configuracion')" class="menu-item" id="menu-configuracion">Mi Cuenta Corporate</a>
+      <a onclick="switchView('plan-pro')" class="menu-item" id="menu-plan-pro" style="color:#fcd34d;font-weight:700">⭐ Plan Pro & Pagos</a>
+
+      <button onclick="handleLogout()" class="menu-item" style="margin-top:auto;background:none;border:none;border-top:1px solid #1e293b;padding-top:1.25rem;color:var(--danger);width:100%;text-align:left;">Cerrar Sesión</button>
+    </aside>
+
+    <main>
+      <header>
+        <div>
+          <h3 style="margin:0;font-size:1rem;color:var(--text-main);letter-spacing:0.5px">ESPACIO DE TRABAJO DE BIZCONTRACT</h3>
+          <p id="session-user-indicator" style="margin:4px 0 0 0;color:var(--text-muted);font-size:0.85rem">Conectando...</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:1rem">
+          <div class="live-badge" id="account-status-badge">🟢 NODO ACCESO CONECTADO</div>
+        </div>
+      </header>
+
+      <!-- Explorar -->
+      <section id="view-explorar" class="view-section active">
+        <div class="workspace">
+          <div class="filter-panel">
+            <h4 style="margin-top:0;border-bottom:1px solid var(--border);padding-bottom:0.5rem;font-size:0.95rem;text-transform:uppercase">Filtros de Búsqueda</h4>
+
+            <div class="filter-group" style="margin-top:1rem">
+              <label for="filter-search">Búsqueda por Texto</label>
+              <input type="text" id="filter-search" oninput="filterProjectsEngine()" placeholder="Ej: Auditoría, Ciberseguridad...">
+            </div>
+
+            <div class="filter-group">
+              <label for="filter-category">Nicho Comercial B2B</label>
+              <select id="filter-category" onchange="filterProjectsEngine()">
+                <option value="Todas">Todos los Nichos</option>
+                <option value="Tecnología y Software Dev">Tecnología y Software Dev</option>
+                <option value="Inteligencia Artificial y Data">Inteligencia Artificial y Data</option>
+                <option value="Ciberseguridad e Infraestructura IT">Ciberseguridad e Infraestructura IT</option>
+                <option value="Consultoría y Finanzas">Consultoría y Finanzas</option>
+                <option value="Auditoría, Legal y Cumplimiento">Auditoría, Legal y Cumplimiento</option>
+                <option value="Marketing Digital y Growth">Marketing Digital y Growth</option>
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <label for="filter-type">Modalidad de Contrato</label>
+              <select id="filter-type" onchange="filterProjectsEngine()">
+                <option value="Todos">Todas las Modalidades</option>
+                <option value="Proyecto Fijo">Proyecto Fijo</option>
+                <option value="Por Horas / Retainer">Por Horas / Retainer</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="projects-container"></div>
+        </div>
+      </section>
+
+      <!-- Publicar -->
+      <section id="view-publicar" class="view-section">
+        <h3 style="text-transform:uppercase;font-size:1.1rem;margin-bottom:1rem">Publicar Nueva Solicitud Privada</h3>
+        <div style="background:white;padding:2rem;border-radius:8px;border:1px solid var(--border);max-width:900px">
+          <form onsubmit="handleCreateProjectSubmit(event)">
+            <div class="form-group">
+              <label for="p-title">Título del Proyecto Comercial</label>
+              <input type="text" id="p-title" required placeholder="Ej. Implementación de modelo predictivo">
+            </div>
+
+            <div class="form-group">
+              <label for="p-category">Nicho Comercial Asignado</label>
+              <select id="p-category">
+                <option value="Tecnología y Software Dev">Tecnología y Software Dev</option>
+                <option value="Inteligencia Artificial y Data">Inteligencia Artificial y Data</option>
+                <option value="Consultoría y Finanzas">Consultoría y Finanzas</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="p-type">Modalidad</label>
+              <select id="p-type">
+                <option value="Proyecto Fijo">Proyecto Fijo</option>
+                <option value="Por Horas / Retainer">Por Horas / Retainer</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="p-budget">Presupuesto Estimado</label>
+              <input type="text" id="p-budget" placeholder="Ej. $8,500 USD">
+            </div>
+
+            <div class="form-group">
+              <label for="p-desc">Descripción Detallada</label>
+              <textarea id="p-desc" rows="5"></textarea>
+            </div>
+
+            <button type="submit" class="btn">Solicitud Pública</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- Mis proyectos -->
+      <section id="view-mis-proyectos" class="view-section">
+        <h3>Mis Proyectos Publicados</h3>
+        <div id="mis-proyectos-container"></div>
+      </section>
+
+      <section id="view-mis-postulaciones" class="view-section">
+        <h3>Mis Postulaciones</h3>
+        <div id="mis-postulaciones-container"></div>
+      </section>
+
+      <section id="view-configuracion" class="view-section">
+        <h3>Perfil Avanzado Corporativo</h3>
+        <form onsubmit="saveProfileData(event)">
+          <div style="background:white;border:1px solid var(--border);border-radius:8px;padding:1.8rem">
+            <div class="form-group">
+              <label for="profile-razon-social">Razón Social</label>
+              <input type="text" id="profile-razon-social" required/>
+            </div>
+            <div class="form-group">
+              <label for="profile-nit">NIT / RUT</label>
+              <input type="text" id="profile-nit"/>
+            </div>
+            <div class="form-group">
+              <label for="profile-phone">Teléfono</label>
+              <input type="tel" id="profile-phone"/>
+            </div>
+            <div class="form-group">
+              <label for="profile-web">Sitio Web</label>
+              <input type="url" id="profile-web"/>
+            </div>
+            <button type="submit" class="btn" style="width:auto;margin-top:0.5rem">Guardar Perfil</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="view-plan-pro" class="view-section">
+        <div style="background:linear-gradient(135deg,#1e1b4b,#311042);color:white;padding:1.8rem;border-radius:8px;margin-bottom:1.25rem;border:1px solid #4c1d95">
+          <h2 style="margin:0">Plan Bizcontract Pro Corporate</h2>
+          <p style="margin:4px 0 0 0">Desbloquea integraciones y postulaciones ilimitadas.</p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr;gap:1rem">
+          <div style="background:white;border-radius:8px;padding:1.6rem;border:1px solid #8b5cf6">
+            <h3 style="margin:0">Suscripción Ilimitada B2B</h3>
+            <div style="margin:1rem 0"><span style="font-size:2rem;font-weight:900">$49</span> USD / mes</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <button class="btn btn-premium" onclick="triggerPayment('mercadopago', { plan:'pro_monthly', amount:49, currency:'USD' })">Pagar con Mercado Pago</button>
+              <button class="btn" style="background:#003087" onclick="triggerPayment('paypal', { plan:'pro_monthly', amount:49, currency:'USD' })">Pagar con PayPal</button>
+              <button class="btn" style="background:#374151" onclick="fetchPayments()">Ver Historial</button>
+            </div>
+
+            <div id="payments-list" style="margin-top:1rem"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+  /* ---------- Config (no secrets en frontend) ---------- */
+  const SUPABASE_URL = "https://gbonjfnznarifhyuzanv.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_KYtURs5rQyBayCWpEo3A8g_a7PPqHH4";
+
+  let _supabase = null;
+  let currentUser = null;
+  let userProfileCache = {};
+  let pollingHandles = {};
+
+  /* ---------- Inicializar Supabase ---------- */
+  try {
+    if (typeof supabase === 'undefined') throw new Error('Supabase JS no cargado. Asegúrate del <script> antes de este script.');
+    _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true, flowType: 'pkce' },
+      global: { headers: { 'x-client-app': 'bizcontract-web-v2' } }
+    });
+    console.info('Supabase inicializado');
+  } catch (e) {
+    console.error('Inicialización Supabase falló', e);
+    showNotification('Error inicializando Supabase: ' + e.message, 'danger');
+  }
+
+  /* ---------- Utilidades UI ---------- */
+  function showNotification(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    if (!container) return console.log(`[${type}] ${message}`);
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.innerHTML = `<span>${message}</span><button class="toast-close" onclick="this.parentElement.remove()">✕</button>`;
+    container.appendChild(t);
+    setTimeout(() => t.classList.add('show'), 50);
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 350); }, 4500);
+  }
+
+  function switchView(viewName) {
+    document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
+    const el = document.getElementById('view-' + viewName);
+    if (el) el.classList.add('active');
+
+    document.querySelectorAll('aside .menu-item').forEach(m => m.classList.remove('active'));
+    const menu = document.getElementById('menu-' + viewName) || document.getElementById('menu-' + viewName.replace('-', ''));
+    if (menu) menu.classList.add('active');
+  }
+
+  /* ---------- Auth & UI init ---------- */
+  let authMode = 'login'; // 'login' | 'signup'
+
+  function toggleAuthMode(e) {
+    e?.preventDefault();
+    authMode = (authMode === 'login') ? 'signup' : 'login';
+    document.getElementById('auth-title').innerText = authMode === 'login' ? 'Ingreso Operativo' : 'Registro de Nueva Empresa';
+    document.getElementById('auth-btn').innerText = authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta';
+  }
+
+  async function handleGoogleLogin() {
+    if (!_supabase) return showNotification('Cliente no inicializado', 'danger');
+    try {
+      const redirectUrl = window.location.origin + window.location.pathname;
+      const { data, error } = await _supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: redirectUrl, queryParams: { access_type: 'offline', prompt: 'consent' } }
+      });
+      if (error) throw error;
+      showNotification('Redirigiendo a Google...', 'warning');
+    } catch (err) {
+      console.error('Google login error', err);
+      showNotification('Error Google: ' + (err?.message || err), 'danger');
+    }
+  }
+
+  async function handleAuthSubmit(e) {
+    e.preventDefault();
+    if (!_supabase) return showNotification('Cliente no inicializado', 'danger');
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-pass').value;
+    const btn = document.getElementById('auth-btn');
+    try {
+      btn.disabled = true;
+      btn.innerText = 'Procesando...';
+
+      if (authMode === 'login') {
+        const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        showNotification('Inicio de sesión exitoso', 'success');
+      } else {
+        const { data, error } = await _supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        showNotification('Cuenta creada. Revisa tu correo para confirmar (si aplica).', 'success');
+        authMode = 'login';
+        toggleAuthMode();
+      }
+    } catch (err) {
+      console.error('Auth error', err);
+      showNotification(err?.message || 'Error de autenticación', 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.innerText = authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta';
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      if (_supabase) await _supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Logout error', e);
+    } finally {
+      currentUser = null;
+      userProfileCache = {};
+      localStorage.removeItem('bc_pay_queue');
+      document.getElementById('view-auth').style.display = 'flex';
+      document.getElementById('app-workspace').style.display = 'none';
+      showNotification('Sesión cerrada', 'info');
+    }
+  }
+
+  /* ---------- Perfil sync ---------- */
+  async function syncUserProfile() {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await _supabase.from('perfiles').select('*').eq('id', currentUser.id).maybeSingle();
+      let profile = data;
+      if (!profile) {
+        const newProfile = {
+          id: currentUser.id,
+          email: currentUser.email,
+          razon_social: currentUser.user_metadata?.full_name || currentUser.email.split('@')[0],
+          is_pro: false,
+          created_at: new Date().toISOString()
+        };
+        const { data: inserted, error: insertError } = await _supabase.from('perfiles').insert([newProfile]).select().maybeSingle();
+        if (insertError) { console.error(insertError); showNotification('Error creando perfil', 'danger'); return; }
+        profile = inserted;
+      }
+      userProfileCache = profile;
+      document.getElementById('profile-razon-social').value = profile.razon_social || '';
+      document.getElementById('profile-nit').value = profile.nit || '';
+      document.getElementById('profile-phone').value = profile.phone || '';
+      document.getElementById('profile-web').value = profile.web || '';
+      const badge = document.getElementById('account-status-badge');
+      if (badge) badge.className = profile.is_pro ? 'live-badge pro-badge' : 'live-badge';
+      if (badge) badge.innerText = profile.is_pro ? '⭐ NODO CORPORATE PRO ACTIVO' : '🟢 NODO ACCESO CONECTADO';
+      document.getElementById('session-user-indicator').innerText = `EMPRESA: ${profile.razon_social || currentUser.email}`;
+    } catch (err) {
+      console.error('syncUserProfile error', err);
+      showNotification('Error sincronizando perfil', 'danger');
+    }
+  }
+
+  async function saveProfileData(e) {
+    e?.preventDefault();
+    if (!currentUser) return showNotification('Inicia sesión', 'danger');
+    const updates = {
+      razon_social: document.getElementById('profile-razon-social').value.trim(),
+      nit: document.getElementById('profile-nit').value.trim(),
+      phone: document.getElementById('profile-phone').value.trim(),
+      web: document.getElementById('profile-web').value.trim(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await _supabase.from('perfiles').update(updates).eq('id', currentUser.id);
+    if (error) { showNotification('Error guardando perfil: ' + error.message, 'danger'); }
+    else { showNotification('Perfil actualizado', 'success'); await syncUserProfile(); }
+  }
+
+  /* ---------- Proyectos ---------- */
+  async function filterProjectsEngine() {
+    try {
+      let query = _supabase.from('proyectos').select('*').order('created_at', { ascending: false }).limit(200);
+      const category = document.getElementById('filter-category')?.value;
+      const type = document.getElementById('filter-type')?.value;
+      const search = document.getElementById('filter-search')?.value?.toLowerCase() || '';
+      if (category && category !== 'Todas') query = query.eq('categoria', category);
+      if (type && type !== 'Todos') query = query.eq('modalidad', type);
+      const { data: proyectos, error } = await query;
+      const container = document.getElementById('projects-container');
+      if (!container) return;
+      container.innerHTML = '';
+      if (error) { container.innerHTML = `<p style="color:#ef4444">Error: ${error.message}</p>`; return; }
+      const filtered = (proyectos || []).filter(p => !search || String(p.titulo || '').toLowerCase().includes(search) || String(p.descripcion || '').toLowerCase().includes(search));
+      if (filtered.length === 0) { container.innerHTML = `<p>No hay requerimientos activos.</p>`; return; }
+      filtered.forEach(p => {
+        const el = document.createElement('div');
+        el.className = 'project-card';
+        el.innerHTML = `<div class="project-header"><span>${escapeHtml(p.empresa || 'Empresa')}</span><span>${new Date(p.created_at).toLocaleDateString()}</span></div>
+          <h4 class="project-title">${escapeHtml(p.titulo)}</h4>
+          <div class="project-meta"><span class="role-tag">${escapeHtml(p.categoria || '')}</span><span class="role-tag">${escapeHtml(p.modalidad || '')}</span></div>
+          <p>${escapeHtml(p.descripcion || '')}</p>
+          <div class="project-footer"><strong>${escapeHtml(p.presupuesto || '')}</strong></div>`;
+        container.appendChild(el);
+      });
+    } catch (err) {
+      console.error('filterProjectsEngine', err);
+    }
+  }
+
+  async function handleCreateProjectSubmit(e) {
+    e.preventDefault();
+    if (!currentUser) return showNotification('Inicia sesión para publicar', 'danger');
+    const payload = {
+      user_id: currentUser.id,
+      titulo: document.getElementById('p-title').value.trim(),
+      categoria: document.getElementById('p-category').value,
+      modalidad: document.getElementById('p-type').value,
+      presupuesto: document.getElementById('p-budget').value.trim(),
+      descripcion: document.getElementById('p-desc').value.trim(),
+      empresa: userProfileCache.razon_social || currentUser.email
+    };
+    if (!payload.titulo || !payload.descripcion) return showNotification('Título y descripción son obligatorios', 'danger');
+    const { error } = await _supabase.from('proyectos').insert([payload]);
+    if (error) showNotification('Error al publicar: ' + error.message, 'danger');
+    else { showNotification('Publicado correctamente', 'success'); switchView('explorar'); filterProjectsEngine(); }
+  }
+
+  /* ---------- PAGOS: invoke create-payment, polling y historial ---------- */
+
+  // Usar funciones.invoke (preferred) y fallback a fetch con token
+  async function invokeCreatePayment(payload) {
+    try {
+      // intentamos invoke (cliente)
+      const res = await _supabase.functions.invoke('create-payment', { body: payload });
+      if (res?.error) throw res.error;
+      return res?.data;
+    } catch (err) {
+      // fallback a fetch con token
+      try {
+        const token = await getSessionAccessToken();
+        if (!token) throw new Error('No session token available for fallback call');
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/create-payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(payload)
+        });
+        if (!r.ok) {
+          const txt = await r.text();
+          throw new Error('Fallback call failed: ' + r.status + ' ' + txt);
+        }
+        return await r.json();
+      } catch (e2) {
+        console.error('invokeCreatePayment fallback error', e2);
+        throw e2;
+      }
+    }
+  }
+
+  async function getSessionAccessToken() {
+    if (!_supabase) return null;
+    try {
+      const { data } = await _supabase.auth.getSession();
+      return data?.session?.access_token || null;
+    } catch (e) {
+      console.warn('getSessionAccessToken error', e);
+      return null;
+    }
+  }
+
+  // Inicia el proceso real de pago abriendo la URL de checkout
+  async function triggerPayment(gatewayRaw, meta = {}) {
+    const gateway = String(gatewayRaw || '').toLowerCase();
+    if (!currentUser) return showNotification('Inicia sesión para pagar', 'danger');
+    if (!['paypal', 'mercadopago', 'mercadopago_col', 'mercadopago_co', 'mercadopago_es'].includes(gateway) && gateway !== 'mercadopago') {
+      // permitimos 'mercadopago' o 'paypal'
+    }
+    const payload = {
+      gateway: gateway === 'paypal' ? 'paypal' : 'mercadopago',
+      user_id: currentUser.id,
+      email: currentUser.email,
+      plan: meta.plan || 'pro_monthly',
+      amount: meta.amount || 49,
+      currency: meta.currency || 'USD',
+      metadata: meta.metadata || {}
+    };
+
+    try {
+      showNotification(`Creando orden segura con ${gateway}...`, 'warning');
+      const data = await invokeCreatePayment(payload);
+      if (!data) throw new Error('No se recibió respuesta de create-payment');
+      if (data.error) throw new Error(data.error);
+      if (!data.checkout_url) throw new Error('create-payment no retornó checkout_url');
+      // registrar polling si viene external_id
+      if (data.external_id) startPollPaymentStatus(data.external_id, currentUser.id, payload.gateway);
+      // Abrir checkout en nueva pestaña (usuario completa el pago)
+      window.open(data.checkout_url, '_blank');
+      showNotification('Se abrió la pasarela de pago en una nueva pestaña. Completa el pago allí.', 'info');
+    } catch (err) {
+      console.error('triggerPayment error', err);
+      showNotification('Error generando pago: ' + (err?.message || err), 'danger');
+    }
+  }
+
+  // Polling simple: consultar tabla pagos por external_id
+  function startPollPaymentStatus(externalId, userId, gateway, interval = 4000, timeoutMs = 1000 * 60 * 4) {
+    if (!externalId) return;
+    const key = `poll_${externalId}`;
+    if (pollingHandles[key]) return;
+    const started = Date.now();
+    pollingHandles[key] = setInterval(async () => {
+      try {
+        const { data, error } = await _supabase.from('pagos').select('*').eq('external_id', externalId).maybeSingle();
+        if (error) { console.warn('poll error', error); return; }
+        if (data && ['approved', 'completed', 'paid'].includes(String(data.status).toLowerCase())) {
+          clearInterval(pollingHandles[key]); delete pollingHandles[key];
+          showNotification('Pago confirmado ✔️', 'success');
+          await syncUserProfile();
+          await fetchPayments();
+        }
+        if (Date.now() - started > timeoutMs) {
+          clearInterval(pollingHandles[key]); delete pollingHandles[key];
+          console.warn('Polling timeout for', externalId);
+        }
+      } catch (err) {
+        console.warn('poll exception', err);
+      }
+    }, interval);
+  }
+
+  // Mostrar historial de pagos del usuario
+  async function fetchPayments() {
+    if (!currentUser) return showNotification('Inicia sesión para ver tus pagos', 'warning');
+    const container = document.getElementById('payments-list');
+    if (!container) return;
+    container.innerHTML = '<small style="color:var(--text-muted)">Cargando historial...</small>';
+    try {
+      const { data, error } = await _supabase.from('pagos').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(200);
+      if (error) { container.innerHTML = `<p style="color:#ef4444">Error: ${escapeHtml(error.message)}</p>`; return; }
+      if (!data || data.length === 0) { container.innerHTML = '<small style="color:var(--text-muted)">No hay pagos registrados</small>'; return; }
+      container.innerHTML = data.map(p => {
+        return `<div style="padding:8px;border-radius:6px;border:1px solid #eee;margin-bottom:6px;background:#fff;">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div><strong>${escapeHtml(p.gateway || '')}</strong> • ${escapeHtml(p.external_id || p.id || '')}<div style="font-size:12px;color:#64748b">${new Date(p.created_at).toLocaleString()} • ${escapeHtml(p.status || '')}</div></div>
+            <div><button class="btn" style="background:#374151;padding:6px 10px;font-size:12px" onclick='console.log(${JSON.stringify(p)})'>Detalles</button></div>
+          </div></div>`;
+      }).join('');
+    } catch (err) {
+      console.error('fetchPayments error', err);
+      container.innerHTML = '<p style="color:#ef4444">Error cargando pagos</p>';
+    }
+  }
+
+  /* ---------- Helpers ---------- */
+  function escapeHtml(str){ if(!str) return ''; return String(str).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  /* ---------- On load: session and listeners ---------- */
+  window.addEventListener('load', async () => {
+    if (!_supabase) return;
+    try {
+      // Limpia hash OAuth si existe (para evitar panel extraño)
+      const hash = window.location.hash;
+      if (hash && (hash.includes('access_token') || hash.includes('refresh_token') || hash.includes('error'))) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+
+      const { data } = await _supabase.auth.getSession();
+      const session = data?.session || null;
+      if (session && session.user) {
+        currentUser = session.user;
+        document.getElementById('view-auth').style.display = 'none';
+        document.getElementById('app-workspace').style.display = 'flex';
+        await syncUserProfile();
+        await filterProjectsEngine();
+        await fetchPayments();
+      } else {
+        document.getElementById('view-auth').style.display = 'flex';
+        document.getElementById('app-workspace').style.display = 'none';
+      }
+
+      _supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          currentUser = session.user;
+          document.getElementById('view-auth').style.display = 'none';
+          document.getElementById('app-workspace').style.display = 'flex';
+          await syncUserProfile();
+          await filterProjectsEngine();
+          await fetchPayments();
+        } else {
+          currentUser = null;
+          userProfileCache = {};
+          document.getElementById('view-auth').style.display = 'flex';
+          document.getElementById('app-workspace').style.display = 'none';
+        }
+      });
+    } catch (err) {
+      console.error('onload error', err);
+    }
+  });
+
+  /* Exponer funciones globalmente para onclicks inline */
+  window.switchView = switchView;
+  window.handleGoogleLogin = handleGoogleLogin;
+  window.handleAuthSubmit = handleAuthSubmit;
+  window.toggleAuthMode = toggleAuthMode;
+  window.handleCreateProjectSubmit = handleCreateProjectSubmit;
+  window.filterProjectsEngine = filterProjectsEngine;
+  window.saveProfileData = saveProfileData;
+  window.handleLogout = handleLogout;
+  window.triggerPayment = triggerPayment;
+  window.fetchPayments = fetchPayments;
+
+  </script>
+</body>
+</html>
