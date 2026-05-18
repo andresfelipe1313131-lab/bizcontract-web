@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIZCONTRACT | Red de Contratación Privada B2B</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root {
+            --bg-main: #0f172a;
+            --bg-app: #f8fafc;
+            --bg-sidebar: #090d16;
+            --bg-sidebar-hover: #1e293b;
+            --bg-sidebar-active: #334155;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --pro-gold: #fbbf24;
+        }
+
+        * { box-sizing: border-box; font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 0; padding: 0; }
+        body { background-color: var(--bg-app); color: var(--text-main); min-height: 100vh; display: flex; }
+
+        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 11000; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background: white; color: #0f172a; padding: 1rem 1.5rem; border-radius: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); font-size: 0.9rem; font-weight: 500; min-width: 320px; max-width: 450px; display: flex; align-items: center; justify-content: space-between; transform: translateY(100px); opacity: 0; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); border-left: 5px solid #cbd5e1; }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.success { border-left-color: var(--success); background: #f0fdf4; color: #14532d; }
+        .toast.danger { border-left-color: var(--danger); background: #fef2f2; color: #7f1d1d; }
+        .toast.warning { border-left-color: var(--warning); background: #fffbeb; color: #78350f; }
+        .toast-close { background: none; border: none; margin-left: 1rem; cursor: pointer; color: inherit; font-size: 1rem; opacity: 0.6; }
+
+        #view-auth { position: fixed; inset: 0; background: #090d16; display: flex; justify-content: center; align-items: flex-start; z-index: 9999; overflow-y: auto; padding: 3rem 1rem; }
+        .auth-card { background: white; padding: 2.5rem; border-radius: 4px; width: 100%; max-width: 520px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); margin-top: auto; margin-bottom: auto; border: 1px solid var(--border); }
+        .logo-container { display: flex; align-items: center; gap: 12px; margin-bottom: 2rem; }
+        .logo-img { height: 32px; width: auto; object-fit: contain; }
+        .logo-biz { font-size: 1.4rem; font-weight: 900; color: #0f172a; letter-spacing: 1px; text-transform: uppercase; }
+        
+        .app-container { display: none; width: 100%; min-height: 100vh; }
+        aside { width: 280px; background-color: var(--bg-sidebar); color: #ffffff; display: flex; flex-direction: column; padding: 2rem 1.2rem; position: fixed; height: 100vh; box-shadow: 4px 0 20px rgba(0,0,0,0.15); z-index: 100; }
+        aside .brand-box { display: flex; align-items: center; gap: 12px; margin-bottom: 3rem; padding-left: 0.5rem; }
+        aside .brand { font-size: 1.3rem; font-weight: 900; color: #fff; letter-spacing: 1.5px; text-transform: uppercase; }
+        
+        .menu-group-title { font-size: 0.7rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 1.5rem; margin-bottom: 0.5rem; padding-left: 0.75rem; }
+        .menu-item { display: flex; align-items: center; padding: 0.8rem 1rem; color: #94a3b8; text-decoration: none; border-radius: 6px; margin-bottom: 0.35rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); text-transform: uppercase; letter-spacing: 0.5px; }
+        .menu-item:hover { background-color: var(--bg-sidebar-hover); color: #f8fafc; transform: translateX(4px); }
+        .menu-item.active { background-color: var(--bg-sidebar-active); color: #fff; border-left: 4px solid var(--pro-gold); padding-left: 0.75rem; }
+        
+        .menu-upgrade { background: rgba(251, 191, 36, 0.1); color: var(--pro-gold); border: 1px solid rgba(251, 191, 36, 0.2); font-weight: 700; margin-top: auto; justify-content: center; }
+        .menu-upgrade:hover { background: var(--pro-gold); color: #090d16; transform: none; }
+
+        main { margin-left: 280px; flex: 1; padding: 2.5rem; width: calc(100% - 280px); background: #f8fafc; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; }
+        
+        .workspace { display: grid; grid-template-columns: 340px 1fr; gap: 2.5rem; }
+        .filter-panel { background: white; padding: 1.8rem; border-radius: 8px; border: 1px solid var(--border); height: fit-content; position: sticky; top: 2rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .filter-group { margin-bottom: 1.5rem; }
+        .filter-group label { display: block; font-size: 0.8rem; font-weight: 700; margin-bottom: 0.6rem; color: #334155; text-transform: uppercase; letter-spacing: 0.5px; }
+        .filter-group select, .filter-group input { width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background-color: #fff; font-size: 0.9rem; outline: none; }
+
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; font-size: 0.8rem; font-weight: 700; margin-bottom: 0.6rem; text-transform: uppercase; color: #334155; letter-spacing: 0.5px; }
+        .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 0.8rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; outline: none; background: white; }
+        
+        .btn { background: var(--bg-main); color: white; border: none; padding: 0.9rem 1.8rem; border-radius: 6px; font-weight: 700; cursor: pointer; width: 100%; transition: all 0.2s; text-align: center; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.5px; }
+        .btn:hover { opacity: 0.95; transform: translateY(-1px); }
+        .btn-gold { background: var(--warning); color: #fff; }
+        
+        .project-card { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 1.8rem; margin-bottom: 1.2rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); }
+        .project-header { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+        .project-title { font-size: 1.25rem; margin: 0.75rem 0; font-weight: 700; color: #0f172a; }
+        .project-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1rem; }
+        .role-tag { background: #f1f5f9; color: #334155; padding: 0.3rem 0.75rem; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; border: 1px solid var(--border); }
+        .project-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid #f1f5f9; }
+
+        .secop-box { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); }
+        .secop-section-title { font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1.5rem; border-bottom: 2px solid var(--bg-main); padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;}
+        .secop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+        
+        .view-section { display: none; }
+        .view-section.active { display: block; }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); display: none; justify-content: center; align-items: center; z-index: 10000; padding: 1rem; }
+        .modal-overlay.active { display: flex; }
+        .modal-box { background: white; border-radius: 4px; width: 100%; max-width: 700px; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.1); display: flex; flex-direction: column; border: 1px solid var(--border); }
+        .modal-header { padding: 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
+        .modal-body { padding: 2rem; overflow-y: auto; }
+        .modal-footer { padding: 1.2rem 2rem; border-top: 1px solid var(--border); display: flex; gap: 1rem; justify-content: flex-end; background: #f8fafc; }
+        .close-modal-btn { background: none; border: none; font-size: 1.2rem; color: var(--text-muted); cursor: pointer; padding: 0.5rem; }
+
+        .monetization-badge { background: #fffbeb; border: 1px solid #fde68a; padding: 0.5rem 1rem; border-radius: 4px; color: #b45309; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+        .monetization-info-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 1rem; border-radius: 4px; color: #166534; font-size: 0.85rem; margin-top: 1rem; line-height: 1.4; }
+        
+        #payment-gateway-window { display: none; position: fixed; inset: 0; background: #f1f5f9; z-index: 20000; overflow-y: auto; padding: 4rem 2rem; }
+        .gateway-container { max-width: 550px; background: white; margin: 0 auto; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); padding: 2.5rem; }
+        .gateway-header { text-align: center; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+        .gateway-brand-img { height: 40px; display: block; margin: 0 auto 1rem auto; }
+        .gateway-options-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-top: 2rem; }
+        .gateway-card { border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: space-between; background: #fafafa; }
+        .gateway-card:hover { border-color: var(--text-main); background: white; transform: translateY(-2px); }
+        .gateway-logo-img { height: 28px; object-fit: contain; }
+    </style>
+</head>
+<body>
+
+    <div id="toast-container"></div>
+
+    <div id="view-auth">
+        <div class="auth-card">
+            <div class="logo-container">
+                <img src="https://img.icons8.com/ios-filled/50/0f172a/workflow.png" class="logo-img" alt="Logo">
+                <div class="logo-biz">BIZCONTRACT</div>
+            </div>
+            <div class="auth-form-body">
+                <h4 id="auth-title" style="margin-bottom:1rem; font-size:0.9rem; text-transform:uppercase; color:var(--text-muted)">Ingreso al Nodo Corporativo</h4>
+                <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+                    <div class="form-group">
+                        <label>Correo Electrónico Comercial</label>
+                        <input type="email" id="auth-email" required placeholder="nombre@empresa.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Contraseña Corporativa</label>
+                        <input type="password" id="auth-pass" required placeholder="••••••••">
+                    </div>
+                    <button type="submit" class="btn" id="auth-btn">Iniciar Sesión</button>
+                </form>
+                <div style="text-align: center; margin-top: 1rem;">
+                    <a href="#" id="auth-toggle" onclick="toggleAuthMode(event)" style="font-size:0.85rem; color:var(--text-muted); font-weight:600;">¿No tienes cuenta? Regístrate aquí</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container" id="app-workspace">
+        <aside>
+            <div class="brand-box">
+                <img src="https://img.icons8.com/ios-filled/50/ffffff/workflow.png" style="width:22px; height:22px;" alt="Logo Aside">
+                <div class="brand">BIZCONTRACT</div>
+            </div>
+            
+            <div class="menu-group-title">Mercado y Contratos</div>
+            <a onclick="switchView('explorar')" class="menu-item active" id="menu-explorar">Buscar Requerimientos</a>
+            <a onclick="switchView('publicar')" class="menu-item" id="menu-publicar">Publicar Solicitud</a>
+            
+            <div class="menu-group-title">Mi Actividad Operativa</div>
+            <a onclick="switchView('mis-proyectos')" class="menu-item" id="menu-mis-proyectos">Mis Proyectos</a>
+            <a onclick="switchView('mis-postulaciones')" class="menu-item" id="menu-mis-postulaciones">Mis Postulaciones</a>
+            
+            <div class="menu-group-title">Gestión Interna</div>
+            <a onclick="switchView('configuracion')" class="menu-item" id="menu-configuracion">Mi Cuenta</a>
+            
+            <a onclick="triggerExternalPaymentFlow()" class="menu-item menu-upgrade">⭐ MEJORAR A PRO</a>
+            <a onclick="handleLogout()" class="menu-item" style="margin-top: 1.5rem; color: var(--danger);">Cerrar Sesión</a>
+        </aside>
+
+        <main>
+            <header>
+                <div>
+                    <h3 style="margin:0; font-size: 1rem; color: var(--text-main); letter-spacing: 0.5px;">BIZCONTRACT WORKSPACE</h3>
+                    <p style="margin:4px 0 0 0; color: var(--text-muted); font-size: 0.85rem;" id="session-user-indicator">Conectando con el servidor...</p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div class="monetization-badge" id="account-tier-badge">
+                        PLAN FREE: <span id="tokens-count">2</span> PROPUESTAS
+                    </div>
+                </div>
+            </header>
+
+            <div id="view-explorar" class="view-section active">
+                <div class="workspace">
+                    <div class="filter-panel">
+                        <h4 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; font-size:0.85rem; text-transform: uppercase;">Filtros de Búsqueda</h4>
+                        <div class="filter-group" style="margin-top: 1rem;">
+                            <label>Búsqueda por Texto</label>
+                            <input type="text" id="filter-search" oninput="filterProjectsEngine()" placeholder="Ej: Auditoría, Ciberseguridad...">
+                        </div>
+                        <div class="filter-group">
+                            <label>Nicho Comercial B2B</label>
+                            <select id="filter-category" onchange="filterProjectsEngine()">
+                                <option value="Todas">Todos los Nichos</option>
+                                <option value="Tecnología y Software Dev">Tecnología y Software Dev</option>
+                                <option value="Inteligencia Artificial y Data">Inteligencia Artificial y Data</option>
+                                <option value="Ciberseguridad e Infraestructura IT">Ciberseguridad e Infraestructura IT</option>
+                                <option value="Consultoría y Finanzas">Consultoría y Finanzas</option>
+                                <option value="Auditoría, Legal y Cumplimiento">Auditoría, Legal y Cumplimiento</option>
+                                <option value="Marketing Digital y Growth">Marketing Digital y Growth</option>
+                                <option value="Diseño UI/UX y Branding">Diseño UI/UX y Branding</option>
+                                <option value="Ingeniería y Proyectos Civiles">Ingeniería y Proyectos Civiles</option>
+                                <option value="Construcción y Arquitectura">Construcción y Arquitectura</option>
+                                <option value="Logística y Cadena de Suministro">Logística y Cadena de Suministro</option>
+                                <option value="Recursos Humanos y Headhunting">Recursos Humanos y Headhunting</option>
+                                <option value="Energías Renovables y Sostenibilidad">Energías Renovables y Sostenibilidad</option>
+                                <option value="Salud y Equipamiento Médico">Salud y Equipamiento Médico</option>
+                                <option value="Educación y E-learning Corporativo">Educación y E-learning Corporativo</option>
+                                <option value="Producción Audiovisual y Media">Producción Audiovisual y Media</option>
+                                <option value="Traducción y Redacción Técnica">Traducción y Redacción Técnica</option>
+                                <option value="Soporte y Asistencia Comercial Virtual">Soporte y Asistencia Comercial Virtual</option>
+                                <option value="Ventas Externas y Telemarketing B2B">Ventas Externas y Telemarketing B2B</option>
+                                <option value="Automatización e Industria 4.0">Automatización e Industria 4.0</option>
+                                <option value="Turismo Corporativo y Eventos">Turismo Corporativo y Eventos</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Modalidad de Contrato</label>
+                            <select id="filter-type" onchange="filterProjectsEngine()">
+                                <option value="Todos">Todas las Modalidades</option>
+                                <option value="Proyecto Fijo">Proyecto Fijo (Llave en mano)</option>
+                                <option value="Por Horas / Retainer">Por Horas / Retainer Mensual</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="projects-container"></div>
+                </div>
+            </div>
+
+            <div id="view-publicar" class="view-section">
+                <h3 style="text-transform: uppercase; font-size: 1.2rem; margin-bottom: 1.5rem; letter-spacing: 0.5px;">Publicar Nueva Solicitud Privada</h3>
+                <div style="background: white; padding: 2rem; border-radius: 8px; border: 1px solid var(--border); max-width: 800px;">
+                    <form onsubmit="handleCreateProjectSubmit(event)">
+                        <div class="form-group">
+                            <label>Título del Proyecto Comercial</label>
+                            <input type="text" id="p-title" required placeholder="Ej. Implementación de modelo predictivo de IA para inventario">
+                        </div>
+                        <div class="secop-grid">
+                            <div class="form-group">
+                                <label>Nicho Comercial Asignado</label>
+                                <select id="p-category" required>
+                                    <option value="Tecnología y Software Dev">Tecnología y Software Dev</option>
+                                    <option value="Inteligencia Artificial y Data">Inteligencia Artificial y Data</option>
+                                    <option value="Ciberseguridad e Infraestructura IT">Ciberseguridad e Infraestructura IT</option>
+                                    <option value="Consultoría y Finanzas">Consultoría y Finanzas</option>
+                                    <option value="Auditoría, Legal y Cumplimiento">Auditoría, Legal y Cumplimiento</option>
+                                    <option value="Marketing Digital y Growth">Marketing Digital y Growth</option>
+                                    <option value="Diseño UI/UX y Branding">Diseño UI/UX y Branding</option>
+                                    <option value="Ingeniería y Proyectos Civiles">Ingeniería y Proyectos Civiles</option>
+                                    <option value="Construcción y Arquitectura">Construcción y Arquitectura</option>
+                                    <option value="Logística y Cadena de Suministro">Logística y Cadena de Suministro</option>
+                                    <option value="Recursos Humanos y Headhunting">Recursos Humanos y Headhunting</option>
+                                    <option value="Energías Renovables y Sostenibilidad">Energías Renovables y Sostenibilidad</option>
+                                    <option value="Salud y Equipamiento Médico">Salud y Equipamiento Médico</option>
+                                    <option value="Educación y E-learning Corporativo">Educación y E-learning Corporativo</option>
+                                    <option value="Producción Audiovisual y Media">Producción Audiovisual y Media</option>
+                                    <option value="Traducción y Redacción Técnica">Traducción y Redacción Técnica</option>
+                                    <option value="Soporte y Asistencia Comercial Virtual">Soporte y Asistencia Comercial Virtual</option>
+                                    <option value="Ventas Externas y Telemarketing B2B">Ventas Externas y Telemarketing B2B</option>
+                                    <option value="Automatización e Industria 4.0">Automatización e Industria 4.0</option>
+                                    <option value="Turismo Corporativo y Eventos">Turismo Corporativo y Eventos</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Modalidad</label>
+                                <select id="p-type" required>
+                                    <option value="Proyecto Fijo">Proyecto Fijo</option>
+                                    <option value="Por Horas / Retainer">Por Horas / Retainer</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Presupuesto Estimado (Referencia)</label>
+                            <input type="text" id="p-budget" required placeholder="Ej. $8,500 USD o 'A convenir'">
+                        </div>
+                        <div class="form-group">
+                            <label>Descripción Detallada del Requerimiento</label>
+                            <textarea id="p-desc" rows="5" required placeholder="Describe los alcances, condiciones técnicas y entregables exactos..."></textarea>
+                        </div>
+                        <button type="submit" class="btn" style="background: var(--text-main);">Publicar Solicitud en la Red B2B</button>
+                    </form>
+                </div>
+            </div>
+
+            <div id="view-mis-proyectos" class="view-section">
+                <h3 style="text-transform: uppercase; font-size: 1.2rem; margin-bottom: 1.5rem; letter-spacing: 0.5px;">Mis Proyectos Publicados</h3>
+                <div id="mis-proyectos-container"></div>
+            </div>
+
+            <div id="view-mis-postulaciones" class="view-section">
+                <h3 style="text-transform: uppercase; font-size: 1.2rem; margin-bottom: 1.5rem; letter-spacing: 0.5px;">Mis Postulaciones Realizadas</h3>
+                <div id="mis-postulaciones-container"></div>
+            </div>
+
+            <div id="view-configuracion" class="view-section">
+                <h3 style="text-transform: uppercase; font-size: 1.2rem; margin-bottom: 1.5rem; letter-spacing: 0.5px;">Mi Perfil y Facturación</h3>
+                <div style="max-width: 900px;">
+                    <div class="secop-box" style="background: #f8fafc; border-color: var(--pro-gold);">
+                        <div class="secop-section-title">
+                            Estado de Suscripción 
+                            <span id="account-status-text" style="font-size: 0.8rem; background: #e2e8f0; padding: 4px 10px; border-radius: 20px;">Cargando plan...</span>
+                        </div>
+                        <p style="font-size: 0.9rem; color: #334155; margin-bottom: 1rem;">Actualiza a <strong>PRO</strong> para enviar postulaciones ilimitadas sin pagar comisiones de éxito del 4%.</p>
+                        <button class="btn btn-gold" style="width: auto;" onclick="triggerExternalPaymentFlow()">Mejorar a PRO por $29.00 USD</button>
+                    </div>
+                    
+                    <form onsubmit="saveProfileData(event)">
+                        <div class="secop-box">
+                            <div class="secop-section-title">Datos Fiscales y de Contacto B2B</div>
+                            <div class="secop-grid">
+                                <div class="form-group">
+                                    <label>Razón Social / Nombre Legal</label>
+                                    <input type="text" id="profile-razon-social" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>NIT / RUT / ID Fiscal</label>
+                                    <input type="text" id="profile-nit">
+                                </div>
+                                <div class="form-group">
+                                    <label>Teléfono Corporativo</label>
+                                    <input type="tel" id="profile-phone">
+                                </div>
+                                <div class="form-group">
+                                    <label>Sitio Web / Portafolio</label>
+                                    <input type="url" id="profile-web">
+                                </div>
+                            </div>
+                            <div style="text-align: right; margin-top: 1rem;">
+                                <button type="submit" class="btn" style="width: auto; padding: 0.75rem 2rem;">Guardar Cambios en la Nube</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="bid-modal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div><h3 id="modal-project-title" style="font-size: 1.2rem;">Título de la Solicitud</h3></div>
+                <button class="close-modal-btn" onclick="closeBidModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-project-desc" style="font-size: 0.95rem; color: #334155; background: #f8fafc; padding: 1rem; border-radius: 4px; border: 1px solid var(--border); margin-bottom: 1.5rem; line-height: 1.5;"></p>
+                <div class="monetization-info-box">
+                    ⚖️ <strong>Cláusula Comercial:</strong> Bajo el Plan Free, usted acepta que si gana la adjudicación se cobrará un <strong>4% sobre el valor final facturado</strong>.
+                </div>
+                <form id="bid-form" onsubmit="submitBidForm(event)" style="margin-top: 1.5rem;">
+                    <div class="form-group">
+                        <label>Tu Presupuesto Solicitado para este Trabajo</label>
+                        <input type="text" id="bid-price" required placeholder="Ej. $4,800 USD Totales">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" style="background: #e2e8f0; color: #334155; width: auto;" onclick="closeBidModal()">Cancelar</button>
+                <button type="submit" form="bid-form" class="btn" style="width: auto;">Enviar Propuesta Real</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="payment-gateway-window">
+        <div class="gateway-container">
+            <div class="gateway-header">
+                <img src="https://img.icons8.com/ios-filled/50/0f172a/workflow.png" class="gateway-brand-img" alt="Logo">
+                <h2 style="font-size:1.3rem; text-transform:uppercase; letter-spacing:1px; color:#0f172a;">Facturación Comercial Exclusiva</h2>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-top:5px;">Suscripción Ilimitada BIZCONTRACT PRO - $29.00 USD</p>
+            </div>
+            
+            <p style="font-size:0.9rem; text-align:center; color:#334155; margin-bottom:1.5rem;">
+                Seleccione el método de pago electrónico preferido:
+            </p>
+
+            <div class="gateway-options-grid">
+                <div class="gateway-card" onclick="executeGatewayTransaction('Mercado Pago')">
+                    <div>
+                        <strong style="display:block; font-size:1rem; color:#0f172a;">Mercado Pago Latam</strong>
+                        <span style="font-size:0.8rem; color:var(--text-muted);">Tarjetas locales y PSE</span>
+                    </div>
+                    <img src="https://img.icons8.com/color/48/mercado-pago.png" class="gateway-logo-img" alt="MercadoPago">
+                </div>
+
+                <div class="gateway-card" onclick="executeGatewayTransaction('PayPal')">
+                    <div>
+                        <strong style="display:block; font-size:1rem; color:#0f172a;">PayPal Global Balance</strong>
+                        <span style="font-size:0.8rem; color:var(--text-muted);">Cuenta PayPal y crédito internacional</span>
+                    </div>
+                    <img src="https://img.icons8.com/color/48/paypal.png" class="gateway-logo-img" alt="PayPal">
+                </div>
+            </div>
+            <button class="btn" style="background:#e2e8f0; color:#334155; margin-top:2.5rem;" onclick="closeExternalPaymentFlow()">Cancelar y regresar</button>
+        </div>
+    </div>
+
+    <script>
+        // CREDENCIALES ASIGNADAS AUTOMÁTICAMENTE Y CORREGIDAS
+        const SUPABASE_URL = "https://gbonjfnznarifhyuzanv.supabase.co"; 
+        const SUPABASE_ANON_KEY = "sb_publishable_KYtURs5rQyBayCWpEo3A8g_a7PPqHH4";
+
+        let _supabase;
+        let currentUser = null;
+        let userProfileCache = { plan: "FREE", tokens_disponibles: 2, razon_social: "" };
+        let activeProjectForBidId = null;
+        let authMode = 'login';
+
+        try { 
+            _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); 
+        } catch (e) { 
+            console.error("Error al inicializar Supabase. Verifica la URL y la Key.", e); 
+        }
+
+        function showNotification(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span>${message}</span><button class="toast-close" onclick="this.parentElement.remove()">✕</button>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 50);
+            setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 4000);
+        }
+
+        // ESCHUCHADOR DE SESIÓN ACTIVA EN TIEMPO REAL
+        window.onload = function() {
+            if (!_supabase) return;
+            _supabase.auth.onAuthStateChange(async (event, session) => {
+                if (session && session.user) {
+                    currentUser = session.user;
+                    await syncUserProfile();
+                    launchAppWorkspace();
+                } else {
+                    document.getElementById('view-auth').style.display = 'flex';
+                    document.getElementById('app-workspace').style.display = 'none';
+                }
+            });
+        };
+
+        function toggleAuthMode(e) {
+            e.preventDefault();
+            authMode = (authMode === 'login') ? 'register' : 'login';
+            document.getElementById('auth-title').innerText = authMode === 'login' ? 'Ingreso al Nodo Corporativo' : 'Registro de Nueva Empresa';
+            document.getElementById('auth-btn').innerText = authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta Corporativa';
+            document.getElementById('auth-toggle').innerText = authMode === 'login' ? '¿No tienes cuenta? Regístrate aquí' : '¿Ya tienes cuenta? Inicia sesión';
+        }
+
+        async function handleAuthSubmit(event) {
+            event.preventDefault();
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-pass').value;
+            
+            try {
+                if (authMode === 'login') {
+                    const { error } = await _supabase.auth.signInWithPassword({ email, password });
+                    if (error) throw error;
+                    showNotification("Acceso autorizado.", "success");
+                } else {
+                    const { data, error } = await _supabase.auth.signUp({ email, password });
+                    if (error) throw error;
+                    
+                    // Inicializar perfil en la tabla relacional perfiles
+                    await _supabase.from('perfiles').insert([{
+                        id: data.user.id,
+                        razon_social: email.split('@')[0].toUpperCase(),
+                        plan: 'FREE',
+                        tokens_disponibles: 2
+                    }]);
+                    showNotification("Cuenta creada. Revisa tu correo si se requiere confirmación.", "warning");
+                }
+            } catch(e) {
+                showNotification(e.message, "danger");
+            }
+        }
+
+        async function syncUserProfile() {
+            if (!currentUser) return;
+            let { data, error } = await _supabase.from('perfiles').select('*').eq('id', currentUser.id).single();
+            if (data) {
+                userProfileCache = data;
+                document.getElementById('profile-razon-social').value = data.razon_social || '';
+                document.getElementById('profile-nit').value = data.nit || '';
+                document.getElementById('profile-phone').value = data.telefono || '';
+                document.getElementById('profile-web').value = data.sitio_web || '';
+            }
+            updateUIBadges();
+        }
+
+        function updateUIBadges() {
+            document.getElementById('session-user-indicator').innerText = `EMPRESA: ${userProfileCache.razon_social || currentUser.email}`;
+            const badge = document.getElementById('account-tier-badge');
+            const statusText = document.getElementById('account-status-text');
+
+            if (userProfileCache.plan === 'PRO') {
+                badge.innerHTML = "💎 PLAN PRO ACTIVADO";
+                badge.style.background = "#f0fdf4"; badge.style.color = "#166534";
+                if(statusText) statusText.innerText = "Plan Actual: PRO (Suscripción Ilimitada)";
+            } else {
+                badge.innerHTML = `⚡ PLAN FREE: <span id="tokens-count">${userProfileCache.tokens_disponibles}</span> PROPUESTAS`;
+                badge.style.background = "#fffbeb"; badge.style.color = "#b45309";
+                if(statusText) statusText.innerText = `Plan Actual: FREE (${userProfileCache.tokens_disponibles} Créditos)`;
+            }
+        }
+
+        function launchAppWorkspace() {
+            document.getElementById('view-auth').style.display = 'none';
+            document.getElementById('app-workspace').style.display = 'flex';
+            filterProjectsEngine();
+        }
+
+        // MOTOR DE CONSULTA Y FILTRADO DIRECTO DESDE SUPABASE
+        async function filterProjectsEngine() {
+            const searchVal = document.getElementById('filter-search').value.toLowerCase().trim();
+            const catVal = document.getElementById('filter-category').value;
+            const typeVal = document.getElementById('filter-type').value;
+
+            let query = _supabase.from('proyectos').select('*');
+
+            if (catVal !== 'Todas') query = query.eq('categoria', catVal);
+            if (typeVal !== 'Todos') query = query.eq('modalidad', typeVal);
+            
+            // Si hay término de búsqueda, usamos la lógica OR nativa de Supabase
+            if (searchVal) {
+                query = query.or(`titulo.ilike.%${searchVal}%,descripcion.ilike.%${searchVal}%,empresa.ilike.%${searchVal}%`);
+            }
+
+            const { data: proyectos, error } = await query.order('created_at', { ascending: false });
+
+            const container = document.getElementById('projects-container');
+            if(!container) return; container.innerHTML = '';
+            
+            if (error || !proyectos || proyectos.length === 0) {
+                container.innerHTML = `<p style="color:var(--text-muted); padding:2rem; background:white; border-radius:6px; border:1px solid var(--border);">No se encontraron proyectos disponibles.</p>`;
+                return;
+            }
+
+            proyectos.forEach(p => {
+                container.innerHTML += `
+                    <div class="project-card">
+                        <div class="project-header"><span>Emisor: ${p.empresa}</span></div>
+                        <h4 class="project-title">${p.titulo}</h4>
+                        <p style="font-size:0.9rem; color:var(--text-muted); margin-bottom:1rem;">${p.descripcion.substring(0, 140)}...</p>
+                        <div class="project-meta">
+                            <span class="role-tag">💼 ${p.categoria}</span>
+                            <span class="role-tag" style="background:#e0f2fe; color:#0369a1; border-color:#bae6fd;">⚙️ ${p.modalidad}</span>
+                        </div>
+                        <div class="project-footer">
+                            <span style="font-weight: 800; color: var(--text-main); font-size:1.15rem;">${p.presupuesto}</span>
+                            <button class="btn" style="width: auto; padding: 0.6rem 1.2rem;" onclick="openBidModal(${p.id}, '${p.titulo.replace(/'/g, "\\'")}', '${p.descripcion.replace(/'/g, "\\'")}')">Postular Oferta</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        // PUBLICAR NUEVO PROYECTO DIRECTO A LA NUBE
+        async function handleCreateProjectSubmit(event) {
+            event.preventDefault();
+            if (!currentUser) return;
+
+            const title = document.getElementById('p-title').value.trim();
+            const category = document.getElementById('p-category').value;
+            const type = document.getElementById('p-type').value;
+            const budget = document.getElementById('p-budget').value.trim();
+            const desc = document.getElementById('p-desc').value.trim();
+
+            const { error } = await _supabase.from('proyectos').insert([{
+                user_id: currentUser.id,
+                titulo: title,
+                categoria: category,
+                modalidad: type,
+                presupuesto: budget,
+                descripcion: desc,
+                empresa: userProfileCache.razon_social || currentUser.email
+            }]);
+
+            if (error) {
+                showNotification(error.message, "danger");
+            } else {
+                showNotification("Proyecto inyectado en el servidor con éxito.", "success");
+                event.target.reset();
+                switchView('explorar');
+            }
+        }
+
+        // ENVIAR PROPUESTA (POSTULACIÓN) REAL
+        function openBidModal(id, title, desc) {
+            if (userProfileCache.plan === "FREE" && userProfileCache.tokens_disponibles <= 0) {
+                return triggerExternalPaymentFlow();
+            }
+            activeProjectForBidId = id;
+            document.getElementById('modal-project-title').innerText = title;
+            document.getElementById('modal-project-desc').innerText = desc;
+            document.getElementById('bid-modal').classList.add('active');
+        }
+
+        function closeBidModal() { document.getElementById('bid-modal').classList.remove('active'); }
+
+        async function submitBidForm(event) {
+            event.preventDefault();
+            if (!currentUser) return;
+            const price = document.getElementById('bid-price').value.trim();
+
+            const { error } = await _supabase.from('postulaciones').insert([{
+                user_id: currentUser.id,
+                proyecto_id: activeProjectForBidId,
+                precio_ofertado: price
+            }]);
+
+            if (error) {
+                showNotification(error.message, "danger");
+                return;
+            }
+
+            if (userProfileCache.plan === "FREE") {
+                let nuevosTokens = userProfileCache.tokens_disponibles - 1;
+                await _supabase.from('perfiles').update({ tokens_disponibles: nuevosTokens }).eq('id', currentUser.id);
+                await syncUserProfile();
+                showNotification("Propuesta registrada. Débito de 1 token aplicado.", "warning");
+            } else {
+                showNotification("Propuesta PRO procesada sin comisiones.", "success");
+            }
+
+            document.getElementById('bid-form').reset();
+            closeBidModal();
+        }
+
+        // GUARDAR CAMBIOS DE PERFIL EN SUPABASE
+        async function saveProfileData(event) {
+            event.preventDefault();
+            if (!currentUser) return;
+
+            const razon = document.getElementById('profile-razon-social').value.trim();
+            const nit = document.getElementById('profile-nit').value.trim();
+            const phone = document.getElementById('profile-phone').value.trim();
+            const web = document.getElementById('profile-web').value.trim();
+
+            const { error } = await _supabase.from('perfiles').upsert({
+                id: currentUser.id,
+                razon_social: razon,
+                nit: nit,
+                telefono: phone,
+                sitio_web: web
+            });
+
+            if (error) showNotification(error.message, "danger");
+            else {
+                showNotification("Perfil modificado en la nube.", "success");
+                await syncUserProfile();
+            }
+        }
+
+        // RENDER DE "MIS PROYECTOS" DESDE BD
+        async function renderMisProyectosEngine() {
+            const container = document.getElementById('mis-proyectos-container');
+            if(!container) return; container.innerHTML = 'Cargando registros...';
+
+            const { data: proyectos } = await _supabase.from('proyectos').select('*').eq('user_id', currentUser.id);
+            container.innerHTML = '';
+
+            if(!proyectos || proyectos.length === 0) {
+                container.innerHTML = `<p style="color:var(--text-muted); padding:2rem; background:white; border-radius:6px;">No tienes solicitudes creadas.</p>`;
+                return;
+            }
+            proyectos.forEach(p => {
+                container.innerHTML += `
+                    <div class="project-card" style="border-left: 4px solid var(--bg-sidebar-active);">
+                        <h4 class="project-title">${p.titulo}</h4>
+                        <div class="project-footer"><span>Presupuesto Base: <strong>${p.presupuesto}</strong></span></div>
+                    </div>`;
+            });
+        }
+
+        // RENDER DE "MIS POSTULACIONES" CON INNER JOIN EN BASE DE DATOS
+        async function renderMisPostulacionesEngine() {
+            const container = document.getElementById('mis-postulaciones-container');
+            if(!container) return; container.innerHTML = 'Cargando registros...';
+
+            // Consultar postulaciones trayendo datos del proyecto asociado
+            const { data: postulaciones } = await _supabase.from('postulaciones').select('*, proyectos(titulo)').eq('user_id', currentUser.id);
+            container.innerHTML = '';
+
+            if(!postulaciones || postulaciones.length === 0) {
+                container.innerHTML = `<p style="color:var(--text-muted); padding:2rem; background:white; border-radius:6px;">No has realizado ofertas.</p>`;
+                return;
+            }
+            postulaciones.forEach(pos => {
+                container.innerHTML += `
+                    <div class="project-card" style="border-left: 4px solid var(--success);">
+                        <h4 class="project-title" style="font-size:1.1rem;">Oferta para: ${pos.proyectos?.titulo || 'Proyecto Externo'}</h4>
+                        <div class="project-footer"><span>Tu cotización: <strong>${pos.precio_ofertado}</strong></span></div>
+                    </div>`;
+            });
+        }
+
+        // PROCESADOR DE PAGOS CON ASIGNACIÓN DE PLAN REAL EN NUBE
+        function triggerExternalPaymentFlow() { document.getElementById('payment-gateway-window').style.display = 'block'; }
+        function closeExternalPaymentFlow() { document.getElementById('payment-gateway-window').style.display = 'none'; }
+
+        async function executeGatewayTransaction(gatewayName) {
+            if(!currentUser) return;
+            const { error } = await _supabase.from('perfiles').update({ plan: 'PRO' }).eq('id', currentUser.id);
+            
+            if(!error) {
+                await syncUserProfile();
+                closeExternalPaymentFlow();
+                showNotification(`¡Suscripción PRO activada mediante ${gatewayName}!`, "success");
+            }
+        }
+
+        function switchView(viewName) {
+            document.querySelectorAll('.view-section, .menu-item').forEach(e => e.classList.remove('active'));
+            document.getElementById('view-' + viewName).classList.add('active');
+            const menuBtn = document.getElementById('menu-' + viewName);
+            if(menuBtn) menuBtn.classList.add('active');
+
+            if (viewName === 'explorar') filterProjectsEngine();
+            if (viewName === 'mis-proyectos') renderMisProyectosEngine();
+            if (viewName === 'mis-postulaciones') renderMisPostulacionesEngine();
+        }
+
+        async function handleLogout() { if (_supabase) await _supabase.auth.signOut(); location.reload(); }
+    </script>
+</body>
+</html>
