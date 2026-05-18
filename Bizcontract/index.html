@@ -1,360 +1,725 @@
-<script>
-    const SUPABASE_URL = "https://gbonjfnznarifhyuzanv.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_KYtURs5rQyBayCWpEo3A8g_a7PPqHH4";
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mi App - NODO CORPORATE</title>
 
-    let _supabase;
-    let currentUser = null;
-    let userProfileCache = {};
-    let authMode = 'login';
+  <!-- Cargar la librería de Supabase (DEBE ir ANTES del script que usa `supabase`) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+    body{margin:16px;color:#222;}
+    .container{max-width:980px;margin:0 auto;}
+    #toast-container{position:fixed;right:16px;top:16px;z-index:9999;}
+    .toast{background:#fff;border:1px solid #ddd;padding:8px 12px;margin-bottom:8px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:flex;align-items:center;gap:8px}
+    .toast.show{transform:none;opacity:1}
+    .toast.warning{border-left:4px solid #f59e0b}
+    .toast.danger{border-left:4px solid #ef4444}
+    .toast.success{border-left:4px solid #10b981}
+    .activity-log{margin-top:12px;padding:8px;border:1px dashed #eee;min-height:60px;background:#fafafa}
+    .view-section{display:none}
+    .view-section.active{display:block}
+    .menu-item.active{font-weight:700}
+    .live-badge{display:inline-block;padding:6px 10px;border-radius:999px;background:#eee}
+    .pro-badge{background:linear-gradient(90deg,#f59e0b,#10b981);color:#fff}
+    .project-card{border:1px solid #eee;padding:12px;margin:8px 0;border-radius:6px;background:#fff}
+    .form-row{margin-bottom:8px}
+    label{display:block;font-size:13px;margin-bottom:4px}
+    input,select,textarea,button{padding:8px;border:1px solid #ddd;border-radius:6px;width:100%;box-sizing:border-box}
+    button.small{width:auto;padding:6px 10px}
+    #password-strength{height:6px;background:#e5e7eb;border-radius:4px;display:block;overflow:hidden}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>NODO CORPORATE — Panel</h1>
+
+    <!-- session indicator / actions -->
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+      <div id="session-user-indicator">No autenticado</div>
+      <div id="account-status-badge" class="live-badge">NODO FREE</div>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button onclick="handleGoogleLogin()" class="small">Iniciar con Google</button>
+        <button onclick="copyUserToken()" class="small">Copiar token</button>
+        <button onclick="forceSignOutAndClear()" class="small">Cerrar sesión (clear)</button>
+      </div>
+    </div>
+
+    <!-- AUTH VIEW -->
+    <div id="view-auth" class="view-section active">
+      <h3 id="auth-title">Ingreso Operativo</h3>
+      <form onsubmit="handleAuthSubmit(event)">
+        <div class="form-row">
+          <label for="auth-email">Correo</label>
+          <input id="auth-email" type="email" required />
+        </div>
+        <div class="form-row">
+          <label for="auth-pass">Contraseña</label>
+          <input id="auth-pass" type="password" required oninput="passwordStrengthMeter(this.value)" />
+          <div id="password-strength" style="width:0%"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="auth-btn" type="submit">Iniciar Sesión</button>
+          <a href="#" id="auth-toggle" onclick="toggleAuthMode(event)">¿No tienes cuenta? Regístrate aquí</a>
+        </div>
+      </form>
+    </div>
+
+    <!-- APP WORKSPACE -->
+    <div id="app-workspace" class="view-section">
+      <h2>Panel</h2>
+
+      <section style="margin-bottom:16px">
+        <h4>Perfil</h4>
+        <form onsubmit="saveProfileData(event)">
+          <div class="form-row">
+            <label>Razón social</label>
+            <input id="profile-razon-social" oninput="autoSaveProfile()" />
+          </div>
+          <div class="form-row">
+            <label>NIT</label>
+            <input id="profile-nit" oninput="autoSaveProfile()" />
+          </div>
+          <div class="form-row">
+            <label>Teléfono</label>
+            <input id="profile-phone" oninput="autoSaveProfile()" />
+          </div>
+          <div class="form-row">
+            <label>Web</label>
+            <input id="profile-web" oninput="autoSaveProfile()" />
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="submit" class="small">Guardar</button>
+            <button type="button" onclick="exportProfileJSON()" class="small">Exportar</button>
+            <input type="file" onchange="importProfileFromJSON(this)" class="small" />
+          </div>
+        </form>
+      </section>
+
+      <section style="margin-bottom:16px">
+        <h4>Proyectos</h4>
+        <div class="form-row"><input id="filter-search" placeholder="Buscar..." oninput="filterProjectsEngine()" /></div>
+        <div class="form-row">
+          <select id="filter-category" onchange="filterProjectsEngine()">
+            <option>Todas</option><option>IT</option><option>Marketing</option>
+          </select>
+        </div>
+        <div id="projects-container" style="margin-top:8px"></div>
+
+        <h5>Crear proyecto</h5>
+        <form onsubmit="handleCreateProjectSubmit(event)">
+          <div class="form-row"><input id="p-title" placeholder="Título" required /></div>
+          <div class="form-row"><select id="p-category"><option>IT</option><option>Marketing</option></select></div>
+          <div class="form-row"><select id="p-type"><option>Remoto</option><option>Presencial</option></select></div>
+          <div class="form-row"><input id="p-budget" placeholder="Presupuesto" /></div>
+          <div class="form-row"><textarea id="p-desc" placeholder="Descripción"></textarea></div>
+          <div style="display:flex;gap:8px"><button type="submit">Publicar</button></div>
+        </form>
+      </section>
+
+      <section style="margin-bottom:16px">
+        <h4>Pagos</h4>
+        <div style="display:flex;gap:8px">
+          <button onclick="triggerPayment('paypal')">Pagar con PayPal</button>
+          <button onclick="triggerPayment('mercadopago')">Pagar con Mercado Pago</button>
+        </div>
+      </section>
+
+      <section>
+        <h4>Actividad</h4>
+        <div id="activity-log" class="activity-log"></div>
+      </section>
+    </div>
+
+    <div style="margin-top:20px">
+      <small>Versión de debug: abre DevTools → Console para ver logs.</small>
+    </div>
+  </div>
+
+  <!-- contenedor de toasts -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- ===========================
+       Tu script JS mejorado (usa _supabase)
+       =========================== -->
+  <script>
+/*
+  Script mejorado: mantiene todas las funciones operativas y añade muchas utilidades.
+  (He dejado exactamente tu JS corregido para que no haya comentarios HTML dentro.)
+*/
+
+const SUPABASE_URL = "https://gbonjfnznarifhyuzanv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_KYtURs5rQyBayCWpEo3A8g_a7PPqHH4";
+
+let _supabase;
+let currentUser = null;
+let userProfileCache = {};
+let authMode = 'login';
+let activityLog = []; // client-side activity feed
+let realtimeChannel = null;
+let pollingHandles = {}; // para pollers de pagos
+
+// Crear cliente con opciones robustas
+try {
+  if (typeof supabase === 'undefined') {
+    throw new Error("La librería de supabase no se cargó. Asegúrate del script CDN antes del script principal.");
+  }
+  _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce'
+    },
+    global: {
+      headers: { "x-client-app": "bizcontract-web-v2" }
+    }
+  });
+  console.log("Supabase inicializado correctamente");
+} catch (e) {
+  console.error("Error al inicializar Supabase client", e);
+  // Mostrar notificación mínima si existe el contenedor
+  const container = document.getElementById('toast-container');
+  if (container) {
+    const t = document.createElement('div'); t.className = 'toast danger'; t.innerText = 'Error al inicializar Supabase client: ' + e.message; container.appendChild(t);
+  }
+}
+
+/* ============================
+   Utilidades generales
+   ============================ */
+function showNotification(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  if (!container) return console.log(`[${type}] ${message}`);
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${message}</span><button class="toast-close" onclick="this.parentElement.remove()">✕</button>`;
+  container.appendChild(toast);
+  setTimeout(() => toast.classList.add('show'), 50);
+  setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 4500);
+  pushActivity(`[${type.toUpperCase()}] ${message}`);
+}
+
+function pushActivity(text) {
+  activityLog.unshift({ ts: new Date().toISOString(), text });
+  localStorage.setItem('bc_activity', JSON.stringify(activityLog.slice(0, 200)));
+  renderActivityLog();
+}
+function renderActivityLog() {
+  const el = document.getElementById('activity-log');
+  if (!el) return;
+  el.innerHTML = activityLog.slice(0,50).map(it => `<div class="act-item"><small>${new Date(it.ts).toLocaleTimeString()}</small> ${escapeHtml(it.text)}</div>`).join('');
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function fetchWithRetries(url, opts = {}, maxAttempts = 3, baseMs = 500) {
+  let attempt = 0;
+  while (attempt < maxAttempts) {
     try {
-        _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            auth: {
-                autoRefreshToken: true,
-                persistSession: true,
-                detectSessionInUrl: true,  // Necesario para OAuth callback
-                flowType: 'pkce'           // Más seguro que implicit flow
-            }
-        });
+      const res = await fetch(url, opts);
+      if (!res.ok && res.status >= 500) throw new Error(`Server error ${res.status}`);
+      return res;
     } catch (e) {
-        console.error("Error al conectar Supabase", e);
+      attempt++;
+      if (attempt >= maxAttempts) throw e;
+      const backoff = baseMs * (2 ** (attempt - 1)) + Math.floor(Math.random() * 200);
+      await delay(backoff);
     }
+  }
+}
 
-    function showNotification(message, type = 'success') {
-        const container = document.getElementById('toast-container');
-        if (!container) return;
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.innerHTML = `<span>${message}</span><button class="toast-close" onclick="this.parentElement.remove()">✕</button>`;
-        container.appendChild(toast);
-        setTimeout(() => toast.classList.add('show'), 50);
-        setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 4000);
+function debounce(fn, wait = 400) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+}
+
+/* ============================
+   Network & visibility handlers
+   ============================ */
+window.addEventListener('online', () => { showNotification('Conexión restaurada', 'success'); processOfflinePaymentQueue(); });
+window.addEventListener('offline', () => { showNotification('Sin conexión. Algunas acciones se encolarán', 'warning'); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    try { _supabase?.auth.getSession().then(r => r?.data?.session && handleSessionChange(r.data.session)); } catch(e){}
+  }
+});
+
+/* ============================
+   Inicio y manejo de sesión
+   ============================ */
+window.onload = async function () {
+  try {
+    const stored = JSON.parse(localStorage.getItem('bc_activity') || '[]');
+    activityLog = stored.concat(activityLog).slice(0,200);
+  } catch(e){}
+  renderActivityLog();
+
+  const hash = window.location.hash;
+  if (hash && (hash.includes('access_token') || hash.includes('error') || hash.includes('refresh_token'))) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+
+  if (!_supabase) { showNotification("Error de conexión con el servicio", "danger"); return; }
+
+  try {
+    const { data: { session } = {} } = await _supabase.auth.getSession().catch(()=>({ data: { session: null } }));
+    await handleSessionChange(session);
+  } catch (err) {
+    console.warn("getSession falló:", err);
+  }
+
+  _supabase.auth.onAuthStateChange(async (event, session) => {
+    pushActivity(`AuthStateChange: ${event}`);
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      await handleSessionChange(session);
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      userProfileCache = {};
+      document.getElementById('view-auth').style.display = 'flex';
+      document.getElementById('app-workspace').style.display = 'none';
     }
+  });
 
-    // ============================================================
-    // INICIALIZACIÓN Y MANEJO DE SESIÓN
-    // ============================================================
-    window.onload = async function () {
-        if (!_supabase) {
-            showNotification("Error de conexión con el servidor", "danger");
-            return;
-        }
+  try { initRealtimeProjects(); } catch(e){}
+};
 
-        // Detectar retorno de OAuth (Google) — limpia el hash del URL
-        const hash = window.location.hash;
-        if (hash && (hash.includes('access_token') || hash.includes('error'))) {
-            // Supabase procesa automáticamente; solo limpiamos la URL
-            history.replaceState(null, '', window.location.pathname);
-        }
+async function handleSessionChange(session) {
+  if (session && session.user) {
+    currentUser = session.user;
+    await syncUserProfile();
+    document.getElementById('view-auth').style.display = 'none';
+    document.getElementById('app-workspace').style.display = 'flex';
+    filterProjectsEngine();
+    pushActivity(`User signed in: ${currentUser.email}`);
+  } else {
+    currentUser = null;
+    document.getElementById('view-auth').style.display = 'flex';
+    document.getElementById('app-workspace').style.display = 'none';
+  }
+}
 
-        // Verificar sesión existente al cargar
-        const { data: { session } } = await _supabase.auth.getSession();
-        await handleSessionChange(session);
+/* ============================
+   Autenticación / Google OAuth
+   ============================ */
+async function handleGoogleLogin() {
+  try {
+    const redirectUrl = window.location.origin + window.location.pathname;
+    const { data, error } = await _supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: redirectUrl, queryParams: { access_type: 'offline', prompt: 'consent' } }
+    });
+    if (error) throw error;
+    pushActivity('Iniciando OAuth con Google');
+  } catch (e) {
+    showNotification("Error con Google: " + (e?.message || e), "danger");
+  }
+}
 
-        // Escuchar cambios de auth
-        _supabase.auth.onAuthStateChange(async (event, session) => {
-            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-                await handleSessionChange(session);
-            } else if (event === 'SIGNED_OUT') {
-                currentUser = null;
-                userProfileCache = {};
-                document.getElementById('view-auth').style.display = 'flex';
-                document.getElementById('app-workspace').style.display = 'none';
-            }
-        });
+/* Toggle UI auth mode */
+function toggleAuthMode(e) {
+  e?.preventDefault();
+  authMode = (authMode === 'login') ? 'register' : 'login';
+  document.getElementById('auth-title').innerText = authMode === 'login' ? 'Ingreso Operativo' : 'Registro de Nueva Empresa';
+  document.getElementById('auth-btn').innerText = authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta';
+  document.getElementById('auth-toggle').innerText = authMode === 'login' ? '¿No tienes cuenta? Regístrate aquí' : '¿Ya tienes cuenta? Inicia sesión';
+}
+
+/* ============================
+   Login / Registro (mejorado)
+   ============================ */
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  const email = document.getElementById('auth-email').value.trim().toLowerCase();
+  const password = document.getElementById('auth-pass').value;
+  const btn = document.getElementById('auth-btn');
+
+  if (!validateEmail(email)) { showNotification("Correo inválido", "danger"); return; }
+  if (!validatePassword(password)) { showNotification("La contraseña debe tener mínimo 8 caracteres", "danger"); return; }
+
+  try {
+    btn.innerText = 'Procesando...'; btn.disabled = true;
+
+    if (authMode === 'login') {
+      const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        if (error.message?.includes("Email not confirmed")) throw new Error("Debes verificar tu correo antes de ingresar.");
+        if (error.message?.includes("Invalid login")) throw new Error("Credenciales incorrectas.");
+        throw error;
+      }
+      pushActivity(`Inicio de sesión correcto: ${email}`);
+    } else {
+      const { data, error } = await _supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: window.location.origin + window.location.pathname }
+      });
+      if (error) throw error;
+      showNotification("Cuenta creada. Revisa tu correo para confirmar.", "warning");
+      pushActivity(`Usuario registrado: ${email}`);
+      authMode = 'login';
+      toggleAuthMode();
+    }
+  } catch (e) {
+    showNotification(e.message || String(e), "danger");
+    pushActivity(`Auth error: ${e.message || e}`);
+  } finally {
+    btn.innerText = authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta';
+    btn.disabled = false;
+  }
+}
+
+function validateEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+function validatePassword(p) { return typeof p === 'string' && p.length >= 8; }
+
+function passwordStrengthMeter(value) {
+  let score = 0;
+  if (!value) return 0;
+  if (value.length >= 8) score++;
+  if (/[A-Z]/.test(value)) score++;
+  if (/[0-9]/.test(value)) score++;
+  if (/[^A-Za-z0-9]/.test(value)) score++;
+  const el = document.getElementById('password-strength');
+  if (el) el.style.width = `${(score/4)*100}%`;
+  return score;
+}
+
+/* ============================
+   Logout
+   ============================ */
+async function handleLogout() {
+  try {
+    if (_supabase) await _supabase.auth.signOut();
+    pushActivity('Usuario desconectado');
+  } catch (err) {
+    console.error("Error signing out", err);
+    pushActivity('Error al cerrar sesión: ' + (err.message || err));
+  } finally {
+    currentUser = null; userProfileCache = {};
+    window.location.href = window.location.origin + window.location.pathname;
+  }
+}
+
+/* ============================
+   Perfil (sync / save / autosave)
+   ============================ */
+async function syncUserProfile() {
+  if (!currentUser) return;
+  try {
+    const { data, error } = await _supabase.from('perfiles').select('*').eq('id', currentUser.id).maybeSingle();
+    if (error) { console.error("Error cargando perfil:", error); showNotification("No se pudo cargar el perfil", "danger"); return; }
+    let profile = data;
+    if (!profile) {
+      const newProfile = {
+        id: currentUser.id,
+        email: currentUser.email,
+        razon_social: currentUser.user_metadata?.full_name || currentUser.email.split('@')[0],
+        is_pro: false,
+        created_at: new Date().toISOString()
+      };
+      const { data: inserted, error: insertError } = await _supabase.from('perfiles').insert([newProfile]).select().single();
+      if (insertError) { console.error("Error creando perfil:", insertError); showNotification("No se pudo crear el perfil", "danger"); return; }
+      profile = inserted;
+    }
+    userProfileCache = profile;
+    ['razon-social','nit','phone','web'].forEach(idSuffix => {
+      const el = document.getElementById('profile-' + idSuffix);
+      if (el) el.value = profile[idSuffix === 'razon-social' ? 'razon_social' : idSuffix] || '';
+    });
+    if (profile.is_pro) {
+      const badge = document.getElementById('account-status-badge');
+      if (badge) { badge.className = "live-badge pro-badge"; badge.innerText = "⭐ NODO CORPORATE PRO ACTIVO"; }
+    }
+    const ind = document.getElementById('session-user-indicator');
+    if (ind) ind.innerText = `EMPRESA: ${userProfileCache.razon_social || currentUser.email}`;
+    pushActivity('Perfil sincronizado');
+  } catch (err) {
+    console.error(err); showNotification("Error sincronizando perfil", "danger");
+  }
+}
+
+async function saveProfileData(event) {
+  event?.preventDefault();
+  if (!currentUser) { showNotification("Sesión expirada", "danger"); return; }
+  const updates = {
+    razon_social: document.getElementById('profile-razon-social').value.trim(),
+    nit: document.getElementById('profile-nit').value.trim(),
+    phone: document.getElementById('profile-phone').value.trim(),
+    web: document.getElementById('profile-web').value.trim(),
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await _supabase.from('perfiles').update(updates).eq('id', currentUser.id);
+  if (error) { showNotification("Error al guardar: " + error.message, "danger"); pushActivity('Error guardar perfil: ' + error.message); }
+  else { showNotification("Perfil actualizado", "success"); pushActivity('Perfil actualizado'); await syncUserProfile(); }
+}
+
+const autoSaveProfile = debounce(() => {
+  if (!currentUser) return;
+  saveProfileData();
+}, 1200);
+
+/* ============================
+   Proyectos (consultas, crear, realtime opcional)
+   ============================ */
+async function filterProjectsEngine() {
+  const search = document.getElementById('filter-search')?.value.toLowerCase() || '';
+  const category = document.getElementById('filter-category')?.value || 'Todas';
+  const type = document.getElementById('filter-type')?.value || 'Todos';
+
+  let query = _supabase.from('proyectos').select('*').order('created_at', { ascending: false }).limit(200);
+  if (category !== 'Todas') query = query.eq('categoria', category);
+  if (type !== 'Todos') query = query.eq('modalidad', type);
+
+  const { data: proyectos, error } = await query;
+  const container = document.getElementById('projects-container');
+  if (!container) return;
+  if (error) { container.innerHTML = `<p style="color:var(--danger)">Error al cargar: ${error.message}</p>`; return; }
+
+  const filtered = (proyectos || []).filter(p =>
+    !search || String(p.titulo || '').toLowerCase().includes(search) || String(p.descripcion || '').toLowerCase().includes(search)
+  );
+
+  container.innerHTML = filtered.length === 0 ? `<p>No hay requerimientos que coincidan.</p>` :
+    filtered.map(p => `
+      <div class="project-card" aria-label="${escapeHtml(p.titulo)}">
+        <div class="project-header"><span>${escapeHtml(p.empresa || 'Empresa')}</span><span>${new Date(p.created_at).toLocaleDateString()}</span></div>
+        <h4 class="project-title">${escapeHtml(p.titulo)}</h4>
+        <div class="project-meta"><span class="role-tag">${escapeHtml(p.categoria)}</span><span class="role-tag">${escapeHtml(p.modalidad)}</span></div>
+        <p>${escapeHtml(p.descripcion)}</p>
+        <div class="project-footer"><strong>${escapeHtml(p.presupuesto)}</strong></div>
+      </div>
+    `).join('');
+}
+
+async function handleCreateProjectSubmit(event) {
+  event.preventDefault();
+  if (!currentUser) { showNotification("Sesión requerida", "danger"); return; }
+  const payload = {
+    user_id: currentUser.id,
+    titulo: document.getElementById('p-title').value.trim(),
+    categoria: document.getElementById('p-category').value,
+    modalidad: document.getElementById('p-type').value,
+    presupuesto: document.getElementById('p-budget').value.trim(),
+    descripcion: document.getElementById('p-desc').value.trim(),
+    empresa: userProfileCache.razon_social || currentUser.email
+  };
+  if (!payload.titulo || !payload.descripcion) { showNotification("Titulo y descripción obligatorios", "danger"); return; }
+
+  const { error } = await _supabase.from('proyectos').insert([payload]);
+  if (error) { showNotification("Error al publicar: " + error.message, "danger"); pushActivity('Error crear proyecto: ' + error.message); }
+  else { showNotification("Publicado correctamente", "success"); pushActivity('Proyecto creado: ' + payload.titulo); switchView('explorar'); filterProjectsEngine(); }
+}
+
+function initRealtimeProjects() {
+  if (!('realtime' in _supabase)) return;
+  try {
+    realtimeChannel = _supabase.channel('public:proyectos')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'proyectos' }, payload => {
+        pushActivity('Realtime: proyecto ' + payload.eventType);
+        filterProjectsEngine();
+      }).subscribe();
+  } catch(e) { console.warn("Realtime subscribe failed:", e); }
+}
+
+/* ============================
+   Pagos — triggerPayment y mejoras
+   ============================ */
+function enqueueOfflinePayment(item) {
+  const q = JSON.parse(localStorage.getItem('bc_pay_queue') || '[]');
+  q.unshift({ ts: new Date().toISOString(), item });
+  localStorage.setItem('bc_pay_queue', JSON.stringify(q.slice(0,50)));
+  pushActivity('Pago encolado por offline');
+}
+async function processOfflinePaymentQueue() {
+  const q = JSON.parse(localStorage.getItem('bc_pay_queue') || '[]');
+  if (!q || q.length === 0) return;
+  for (const entry of q.slice()) {
+    try {
+      await triggerPayment(entry.item.gateway, entry.item.meta);
+      const remaining = JSON.parse(localStorage.getItem('bc_pay_queue') || '[]').filter(e => e.ts !== entry.ts);
+      localStorage.setItem('bc_pay_queue', JSON.stringify(remaining));
+    } catch (e) {
+      console.warn('Reintento de pago falló:', e);
+    }
+  }
+}
+
+async function invokeCreatePayment(payload, attempts = 3) {
+  try {
+    const res = await _supabase.functions.invoke('create-payment', { body: payload });
+    if (res.error) throw res.error;
+    return res.data;
+  } catch (e) {
+    try {
+      const token = await getUserToken();
+      const r = await fetchWithRetries(`${SUPABASE_URL}/functions/v1/create-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      }, attempts);
+      if (!r.ok) throw new Error(`Status ${r.status}`);
+      const json = await r.json();
+      return json;
+    } catch (err) {
+      throw err;
+    }
+  }
+}
+
+async function getUserToken() {
+  try {
+    const key = Object.keys(localStorage).find(k => k.includes('gbonjfnznarifhyuzanv-auth-token'));
+    if (!key) return null;
+    const raw = localStorage.getItem(key);
+    const obj = JSON.parse(raw);
+    return obj?.access_token || obj?.currentSession?.access_token || null;
+  } catch (e) { return null; }
+}
+
+async function triggerPayment(gateway = 'mercadopago', meta = {}) {
+  if (!currentUser) { showNotification("Sesión requerida", "danger"); return; }
+  try {
+    showNotification(`Generando orden segura con ${gateway}...`, "warning");
+    const payload = {
+      gateway,
+      user_id: currentUser.id,
+      email: currentUser.email,
+      plan: meta.plan || 'pro_monthly',
+      amount: meta.amount || 49,
+      currency: meta.currency || 'USD'
     };
 
-    async function handleSessionChange(session) {
-        if (session && session.user) {
-            currentUser = session.user;
-            await syncUserProfile();
-            document.getElementById('view-auth').style.display = 'none';
-            document.getElementById('app-workspace').style.display = 'flex';
-            filterProjectsEngine();
-        } else {
-            currentUser = null;
-            document.getElementById('view-auth').style.display = 'flex';
-            document.getElementById('app-workspace').style.display = 'none';
-        }
+    if (!navigator.onLine) {
+      enqueueOfflinePayment({ gateway, meta: payload });
+      showNotification('Estás offline. El pago se ha encolado y se intentará cuando vuelvas online', 'warning');
+      return;
     }
 
-    // ============================================================
-    // GOOGLE OAUTH — MEJORADO
-    // ============================================================
-    async function handleGoogleLogin() {
-        try {
-            // Construir redirect URL exacto (sin hash, sin query)
-            const redirectUrl = window.location.origin + window.location.pathname;
+    const data = await invokeCreatePayment(payload);
+    if (!data || !data.checkout_url) throw new Error("No se obtuvo URL de pago");
+    pushActivity('Orden de pago creada: ' + (data.external_id || 'unknown'));
+    if (data.external_id) startPollPaymentStatus(data.external_id, currentUser.id, gateway);
 
-            const { data, error } = await _supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: {
-                    redirectTo: redirectUrl,
-                    queryParams: {
-                        access_type: 'offline',
-                        prompt: 'consent'
-                    }
-                }
-            });
-            if (error) throw error;
-            // El navegador redirige automáticamente a Google
-        } catch (e) {
-            showNotification("Error con Google: " + e.message, "danger");
-        }
+    window.open(data.checkout_url, '_blank');
+    showNotification('Se abrió la pasarela en una nueva pestaña. Completa el pago allí.', 'info');
+
+  } catch (e) {
+    console.error('triggerPayment error:', e);
+    if (!navigator.onLine) {
+      enqueueOfflinePayment({ gateway, meta: { plan: 'pro_monthly', amount: 49, currency: 'USD' } });
+      showNotification("Sin conexión: pago encolado", "warning");
+    } else {
+      showNotification("Error generando pago: " + (e.message || e), "danger");
     }
+  }
+}
 
-    function toggleAuthMode(e) {
-        e.preventDefault();
-        authMode = (authMode === 'login') ? 'register' : 'login';
-        document.getElementById('auth-title').innerText = authMode === 'login' ? 'Ingreso Operativo' : 'Registro de Nueva Empresa';
-        document.getElementById('auth-btn').innerText = authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta';
-        document.getElementById('auth-toggle').innerText = authMode === 'login' ? '¿No tienes cuenta? Regístrate aquí' : '¿Ya tienes cuenta? Inicia sesión';
+function startPollPaymentStatus(externalId, userId, gateway, interval = 5000, timeoutMs = 5 * 60 * 1000) {
+  const key = `poll_${externalId}`;
+  if (pollingHandles[key]) return;
+  const started = Date.now();
+  pollingHandles[key] = setInterval(async () => {
+    try {
+      const { data, error } = await _supabase.from('pagos').select('*').eq('external_id', externalId).maybeSingle();
+      if (error) { console.warn('poll error', error); return; }
+      if (data && (data.status === 'approved' || data.status === 'completed' || data.status === 'PAID' || data.status === 'completed')) {
+        clearInterval(pollingHandles[key]); delete pollingHandles[key];
+        showNotification('Pago confirmado ✔️', 'success');
+        pushActivity('Pago aprobado: ' + externalId);
+        await syncUserProfile();
+      }
+      if (Date.now() - started > timeoutMs) {
+        clearInterval(pollingHandles[key]); delete pollingHandles[key];
+        pushActivity('Poll timeout para pago ' + externalId);
+      }
+    } catch (e) {
+      console.warn('poll exception', e);
     }
+  }, interval);
+}
 
-    async function handleAuthSubmit(event) {
-        event.preventDefault();
-        const email = document.getElementById('auth-email').value.trim().toLowerCase();
-        const password = document.getElementById('auth-pass').value;
-        const btn = document.getElementById('auth-btn');
+/* Debug / utilidades UX */
+function copyUserToken() {
+  getUserToken().then(token => {
+    if (!token) return showNotification('No token disponible en esta pestaña', 'danger');
+    navigator.clipboard.writeText(token).then(() => showNotification('Token copiado al portapapeles (pégalo solo en entornos seguros)', 'info'));
+  });
+}
 
-        // Validaciones cliente
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            showNotification("Correo inválido", "danger"); return;
-        }
-        if (password.length < 8) {
-            showNotification("La contraseña debe tener mínimo 8 caracteres", "danger"); return;
-        }
+function exportProfileJSON() {
+  if (!userProfileCache || !userProfileCache.id) return showNotification('No hay perfil para exportar', 'danger');
+  const blob = new Blob([JSON.stringify(userProfileCache, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `perfil_${userProfileCache.id}.json`; a.click(); URL.revokeObjectURL(url);
+  pushActivity('Perfil exportado');
+}
 
-        try {
-            btn.innerText = 'Procesando...';
-            btn.disabled = true;
+function importProfileFromJSON(fileInput) {
+  const f = fileInput?.files?.[0];
+  if (!f) return showNotification('Selecciona un archivo JSON', 'danger');
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const obj = JSON.parse(e.target.result);
+      if (!obj.id) return showNotification('JSON inválido', 'danger');
+      await _supabase.from('perfiles').update({
+        razon_social: obj.razon_social,
+        nit: obj.nit,
+        phone: obj.phone,
+        web: obj.web
+      }).eq('id', obj.id);
+      showNotification('Perfil importado', 'success');
+      pushActivity('Perfil importado desde JSON');
+      await syncUserProfile();
+    } catch (err) { showNotification('Error importando JSON: ' + (err.message || err), 'danger'); }
+  };
+  reader.readAsText(f);
+}
 
-            if (authMode === 'login') {
-                const { error } = await _supabase.auth.signInWithPassword({ email, password });
-                if (error) {
-                    if (error.message.includes("Email not confirmed")) {
-                        throw new Error("⚠️ Debes verificar tu correo antes de ingresar.");
-                    }
-                    if (error.message.includes("Invalid login")) {
-                        throw new Error("Credenciales incorrectas.");
-                    }
-                    throw error;
-                }
-            } else {
-                const { data, error } = await _supabase.auth.signUp({
-                    email,
-                    password,
-                    options: {
-                        emailRedirectTo: window.location.origin + window.location.pathname
-                    }
-                });
-                if (error) throw error;
-                showNotification("✅ Cuenta creada. Revisa tu correo para confirmar.", "warning");
-                authMode = 'login';
-                document.getElementById('auth-title').innerText = 'Ingreso Operativo';
-                document.getElementById('auth-btn').innerText = 'Iniciar Sesión';
-            }
-        } catch (e) {
-            showNotification(e.message, "danger");
-        } finally {
-            btn.innerText = authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta';
-            btn.disabled = false;
-        }
-    }
+function switchView(viewName) {
+  document.querySelectorAll('.view-section, .menu-item').forEach(e => e.classList.remove('active'));
+  const view = document.getElementById('view-' + viewName);
+  if (view) view.classList.add('active');
+  const menu = document.getElementById('menu-' + viewName);
+  if (menu) menu.classList.add('active');
+}
 
-    async function handleLogout() {
-        try {
-            if (_supabase) await _supabase.auth.signOut();
-        } catch (err) {
-            console.error("Error signing out", err);
-        } finally {
-            currentUser = null;
-            userProfileCache = {};
-            window.location.href = window.location.origin + window.location.pathname;
-        }
-    }
+async function forceSignOutAndClear() {
+  try {
+    await _supabase.auth.signOut();
+  } catch (e) {}
+  localStorage.removeItem('gbonjfnznarifhyuzanv-auth-token');
+  localStorage.removeItem('bc_pay_queue');
+  localStorage.removeItem('bc_activity');
+  showNotification('Cerrada sesión y datos locales eliminados', 'info');
+  location.reload();
+}
 
-    // ============================================================
-    // PERFIL — usa upsert para crear si no existe
-    // ============================================================
-    async function syncUserProfile() {
-        if (!currentUser) return;
+/* Exponer funciones */
+window.handleGoogleLogin = handleGoogleLogin;
+window.toggleAuthMode = toggleAuthMode;
+window.handleAuthSubmit = handleAuthSubmit;
+window.handleLogout = handleLogout;
+window.saveProfileData = saveProfileData;
+window.autoSaveProfile = autoSaveProfile;
+window.filterProjectsEngine = filterProjectsEngine;
+window.handleCreateProjectSubmit = handleCreateProjectSubmit;
+window.triggerPayment = triggerPayment;
+window.copyUserToken = copyUserToken;
+window.exportProfileJSON = exportProfileJSON;
+window.importProfileFromJSON = importProfileFromJSON;
+window.passwordStrengthMeter = passwordStrengthMeter;
+window.switchView = switchView;
+window.forceSignOutAndClear = forceSignOutAndClear;
 
-        // maybeSingle() NO falla si no hay registro
-        let { data, error } = await _supabase
-            .from('perfiles')
-            .select('*')
-            .eq('id', currentUser.id)
-            .maybeSingle();
-
-        if (error) {
-            console.error("Error cargando perfil:", error);
-            showNotification("No se pudo cargar el perfil", "danger");
-            return;
-        }
-
-        // Si no existe perfil, lo creamos automáticamente
-        if (!data) {
-            const newProfile = {
-                id: currentUser.id,
-                email: currentUser.email,
-                razon_social: currentUser.user_metadata?.full_name || currentUser.email.split('@')[0],
-                is_pro: false,
-                created_at: new Date().toISOString()
-            };
-            const { data: inserted, error: insertError } = await _supabase
-                .from('perfiles')
-                .insert([newProfile])
-                .select()
-                .single();
-            if (insertError) {
-                console.error("Error creando perfil:", insertError);
-                return;
-            }
-            data = inserted;
-        }
-
-        userProfileCache = data;
-        document.getElementById('profile-razon-social').value = data.razon_social || '';
-        document.getElementById('profile-nit').value = data.nit || '';
-        document.getElementById('profile-phone').value = data.phone || '';
-        document.getElementById('profile-web').value = data.web || '';
-
-        if (data.is_pro) {
-            const badge = document.getElementById('account-status-badge');
-            badge.className = "live-badge pro-badge";
-            badge.innerText = "⭐ NODO CORPORATE PRO ACTIVO";
-        }
-        document.getElementById('session-user-indicator').innerText =
-            `EMPRESA: ${userProfileCache.razon_social || currentUser.email}`;
-    }
-
-    async function saveProfileData(event) {
-        event.preventDefault();
-        const updates = {
-            razon_social: document.getElementById('profile-razon-social').value.trim(),
-            nit: document.getElementById('profile-nit').value.trim(),
-            phone: document.getElementById('profile-phone').value.trim(),
-            web: document.getElementById('profile-web').value.trim(),
-            updated_at: new Date().toISOString()
-        };
-        const { error } = await _supabase.from('perfiles').update(updates).eq('id', currentUser.id);
-        if (error) {
-            showNotification("Error al guardar: " + error.message, "danger");
-        } else {
-            showNotification("Perfil actualizado", "success");
-            await syncUserProfile();
-        }
-    }
-
-    // ============================================================
-    // PROYECTOS
-    // ============================================================
-    async function filterProjectsEngine() {
-        const search = document.getElementById('filter-search')?.value.toLowerCase() || '';
-        const category = document.getElementById('filter-category')?.value || 'Todas';
-        const type = document.getElementById('filter-type')?.value || 'Todos';
-
-        let query = _supabase.from('proyectos').select('*').order('created_at', { ascending: false });
-        if (category !== 'Todas') query = query.eq('categoria', category);
-        if (type !== 'Todos') query = query.eq('modalidad', type);
-
-        const { data: proyectos, error } = await query;
-        const container = document.getElementById('projects-container');
-        if (!container) return;
-
-        if (error) {
-            container.innerHTML = `<p style="color:var(--danger)">Error al cargar: ${error.message}</p>`;
-            return;
-        }
-
-        const filtered = (proyectos || []).filter(p =>
-            !search || p.titulo.toLowerCase().includes(search) || p.descripcion.toLowerCase().includes(search)
-        );
-
-        container.innerHTML = '';
-        if (filtered.length === 0) {
-            container.innerHTML = `<p>No hay requerimientos que coincidan.</p>`;
-            return;
-        }
-        filtered.forEach(p => {
-            container.innerHTML += `
-                <div class="project-card">
-                    <div class="project-header"><span>${p.empresa || 'Empresa'}</span><span>${new Date(p.created_at).toLocaleDateString()}</span></div>
-                    <h4 class="project-title">${escapeHtml(p.titulo)}</h4>
-                    <div class="project-meta">
-                        <span class="role-tag">${escapeHtml(p.categoria)}</span>
-                        <span class="role-tag">${escapeHtml(p.modalidad)}</span>
-                    </div>
-                    <p>${escapeHtml(p.descripcion)}</p>
-                    <div class="project-footer"><strong>${escapeHtml(p.presupuesto)}</strong></div>
-                </div>`;
-        });
-    }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-    }
-
-    async function handleCreateProjectSubmit(event) {
-        event.preventDefault();
-        if (!currentUser) { showNotification("Sesión expirada", "danger"); return; }
-
-        const { error } = await _supabase.from('proyectos').insert([{
-            user_id: currentUser.id,
-            titulo: document.getElementById('p-title').value.trim(),
-            categoria: document.getElementById('p-category').value,
-            modalidad: document.getElementById('p-type').value,
-            presupuesto: document.getElementById('p-budget').value.trim(),
-            descripcion: document.getElementById('p-desc').value.trim(),
-            empresa: userProfileCache.razon_social || currentUser.email
-        }]);
-        if (error) {
-            showNotification("Error al publicar: " + error.message, "danger");
-        } else {
-            showNotification("Publicado correctamente", "success");
-            switchView('explorar');
-        }
-    }
-
-    // ============================================================
-    // PASARELAS DE PAGO — INTEGRACIÓN REAL
-    // ============================================================
-    async function triggerPayment(gateway) {
-        if (!currentUser) { showNotification("Sesión requerida", "danger"); return; }
-
-        try {
-            showNotification(`Generando orden segura con ${gateway}...`, "warning");
-
-            // Llamar a Edge Function de Supabase que crea la orden del lado del servidor
-            // Esto evita que el cliente marque is_pro=true directamente (inseguro)
-            const { data, error } = await _supabase.functions.invoke('create-payment', {
-                body: {
-                    gateway: gateway,            // 'mercadopago' o 'paypal'
-                    user_id: currentUser.id,
-                    email: currentUser.email,
-                    plan: 'pro_monthly',
-                    amount: 49,
-                    currency: 'USD'
-                }
-            });
-
-            if (error) throw error;
-            if (!data?.checkout_url) throw new Error("No se obtuvo URL de pago");
-
-            // Redirigir al checkout real
-            window.location.href = data.checkout_url;
-
-        } catch (e) {
-            console.error(e);
-            showNotification("Error generando pago: " + e.message, "danger");
-        }
-    }
-
-    function switchView(viewName) {
-        document.querySelectorAll('.view-section, .menu-item').forEach(e => e.classList.remove('active'));
-        document.getElementById('view-' + viewName).classList.add('active');
-        if (document.getElementById('menu-' + viewName)) document.getElementById('menu-' + viewName).classList.add('active');
-    }
-</script>
+/* Fin del script */
+  </script>
+</body>
+</html>
